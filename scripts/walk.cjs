@@ -1,23 +1,34 @@
 // Walks Form Filler in Chromium at phone size with the invented forms in tests/fixtures: a crooked phone photo of a
-// form and the same form as a PDF. Fills each from loose answers, edits one on the page, adds a blank by hand,
-// downloads both PDFs and checks what is in them with pdftotext and pdf-lib.
-//   node scripts/walk.cjs [dist] [--shots DIR]
+// form, the same form as a PDF, and a PDF with its own fill-in fields. Fills each, edits on the page, adds a blank,
+// remembers a form, fills your details and today's date, signs, makes copies from a CSV, saves and reopens a template,
+// prefills from a link, works offline, and (with --handwriting) reads the synthetic handwritten page. Every PDF is
+// checked with pdftotext and pdf-lib.
+//   node scripts/walk.cjs [dist] [--shots DIR] [--handwriting]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const { chromium } = require('playwright');
 
 const folder = path.resolve(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'dist');
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
+const handwriting = process.argv.includes('--handwriting');
 const fixtures = path.resolve(__dirname, '../tests/fixtures');
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.gz': 'application/gzip' };
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'form-filler-walk-'));
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.gz': 'application/gzip', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
 const ANSWERS = 'Jane Roe. 11/13/2026. Respiratory Care\nVentilator. VNT-2219. 1\nOximeter. OX-77. 2\n-. x\nReturn by Friday. J. R. Smith';
+const HF = /^https:\/\/([a-z0-9-]+\.)*(huggingface\.co|hf\.co)\//;
 const results = [];
-const step = async (name, work) => { try { await work(); results.push([true, name]); console.log('PASS  ' + name); } catch (error) { results.push([false, name]); console.log('FAIL  ' + name + '\n        ' + String(error.message).split('\n').slice(0, 6).join('\n        ')); } };
+const step = async (name, work) => { try { await work(); results.push([true, name]); console.log('PASS  ' + name); } catch (error) { results.push([false, name]); console.log('FAIL  ' + name + '\n        ' + String(error.message).split('\n').slice(0, 8).join('\n        ')); } };
+// pdftotext's text; a complaint from poppler about the file fails the step.
+const pdfText = file => { const run = spawnSync('pdftotext', ['-layout', file, '-']); assert.equal(run.stderr.toString(), '', 'poppler reads ' + path.basename(file) + ' without complaint'); return run.stdout.toString(); };
+const today = (() => { const date = new Date(); return String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0') + '/' + date.getFullYear(); })();
 
 (async () => {
+  const { PDFDocument } = await import('pdf-lib');
+  const lib = await import(path.resolve(__dirname, '../src/lib/index.js'));
   const server = http.createServer((request, response) => {
     const file = path.join(folder, decodeURIComponent(new URL(request.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
     if (!file.startsWith(folder) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { response.writeHead(404).end(); return; }
@@ -26,43 +37,55 @@ const step = async (name, work) => { try { await work(); results.push([true, nam
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, acceptDownloads: true });
-  const outside = [];
-  context.on('request', request => { const url = request.url(); if (!url.startsWith(origin) && !/^(data|blob):/.test(url)) outside.push(url); });
-  const page = await context.newPage(), problems = [];
-  page.on('pageerror', error => problems.push(error.message));
-  page.on('console', message => { if (message.type() === 'error' && !/^(Estimating resolution|Detected \d+ diacritics)/.test(message.text())) problems.push(message.text()); });
+  const outside = [], problems = [];
+  const open = async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, acceptDownloads: true });
+    context.on('request', request => { const url = request.url(); if (!url.startsWith(origin) && !/^(data|blob):/.test(url)) outside.push(url); });
+    const page = await context.newPage();
+    page.on('pageerror', error => problems.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && !/^(Estimating resolution|Detected \d+ diacritics)/.test(message.text())) problems.push(message.text()); });
+    return { context, page };
+  };
+  let { context, page } = await open();
   const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, name + '.png'), fullPage: false }); } };
   const values = () => page.$$eval('[data-blank]', inputs => inputs.map(input => input.type === 'checkbox' ? input.checked : input.value));
-  const save = async (button, name) => { const [download] = await Promise.all([page.waitForEvent('download'), page.click(button)]); const file = path.join(require('node:os').tmpdir(), name); await download.saveAs(file); return file; };
-  const fieldsOf = async file => { const { PDFDocument } = await import('pdf-lib'); const doc = await PDFDocument.load(fs.readFileSync(file)); return doc.getForm().getFields().map(field => [field.getName(), field.constructor.name === 'PDFCheckBox' ? field.isChecked() : field.getText() ?? '']); };
+  const save = async (button, name) => { const [download] = await Promise.all([page.waitForEvent('download'), page.click(button)]); const file = path.join(scratch, name); await download.saveAs(file); return file; };
+  const fieldsOf = async file => { const doc = await PDFDocument.load(fs.readFileSync(file)); return doc.getForm().getFields().map(field => [field.getName(), field.constructor.name === 'PDFCheckBox' ? field.isChecked() : field.constructor.name === 'PDFDropdown' ? field.getSelected()[0] : field.constructor.name === 'PDFRadioGroup' ? field.getSelected() : field.getText() ?? '']); };
+  const summary = () => page.locator('.panel .subtle').first().innerText();
+  const openForm = async (name, done) => { await page.setInputFiles('#form-file', path.join(fixtures, name)); await page.waitForFunction(text => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes(text), done, { timeout: 120000 }); };
+  const typeAnswers = async text => { await page.fill('#answers', text); await page.waitForTimeout(100); };
   const expected = ['Jane Roe', '11/13/2026', 'Respiratory Care', 'Ventilator', 'VNT-2219', '1', 'Oximeter', 'OX-77', '2', false, true, 'Return by Friday', 'J. R. Smith'];
 
   await page.goto(origin);
+  await step('the page is installable: a manifest with icons, and a service worker that keeps its files', async () => {
+    const manifest = await (await page.request.get(origin + 'manifest.webmanifest')).json();
+    assert.equal(manifest.display, 'standalone'); assert.ok(manifest.icons.some(icon => icon.sizes === '512x512'));
+    await page.waitForFunction(() => navigator.serviceWorker?.controller || navigator.serviceWorker?.ready.then(() => true), null, { timeout: 30000 });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    const kept = await page.evaluate(async () => { const keys = await caches.keys(); const cache = await caches.open(keys.find(key => key.startsWith('form-filler-'))); return (await cache.keys()).length; });
+    assert.ok(kept >= 15, kept + ' files kept');
+  });
   await step('a crooked phone photo of a form: straightened, and its 13 blanks found', async () => {
-    await page.setInputFiles('#form-file', path.join(fixtures, 'form-photo.png'));
-    await page.waitForFunction(() => !document.querySelector('.busy') && /blanks? found/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 120000 });
-    const summary = await page.locator('.panel .subtle').first().innerText();
-    assert.match(summary, /13 blanks found · straightened 1\.2°/);
+    await openForm('form-photo.png', 'blanks found');
+    assert.match(await summary(), /13 blanks found · straightened 1\.2°/);
   });
   await step('loose answers land in order: periods and lines move on, a dash skips, x ticks', async () => {
-    await page.fill('#answers', ANSWERS); await page.waitForTimeout(100);
+    await page.uncheck('#use-details');
+    await typeAnswers(ANSWERS);
     assert.deepEqual(await values(), expected);
     assert.match(await page.locator('.list').innerText(), /Name\s+Jane Roe/);
     await shot('form-1-filled');
   });
   await step('an answer changed on the form itself stays changed', async () => {
     await page.locator('[data-blank]').nth(2).fill('Respiratory Therapy'); await page.waitForTimeout(50);
-    await page.fill('#answers', ANSWERS + '\n'); await page.waitForTimeout(50);
+    await typeAnswers(ANSWERS + '\n');
     assert.equal((await values())[2], 'Respiratory Therapy');
   });
   await step('the editable PDF holds a field per blank with its answer; the print-ready one has the answers as text', async () => {
-    const editable = await save('#pdf-edit', 'filled.pdf');
-    const fields = await fieldsOf(editable);
+    const fields = await fieldsOf(await save('#pdf-edit', 'filled.pdf'));
     assert.equal(fields.length, 13);
     assert.deepEqual(fields.map(([, value]) => value), [...expected.slice(0, 2), 'Respiratory Therapy', ...expected.slice(3)]);
-    const printable = await save('#pdf-print', 'print.pdf');
-    const text = execFileSync('pdftotext', ['-layout', printable, '-']).toString();
+    const printable = await save('#pdf-print', 'print.pdf'), text = pdfText(printable);
     for (const word of ['Jane Roe', 'VNT-2219', 'Return by Friday', 'J. R. Smith']) assert.ok(text.includes(word), word + ' in the print-ready PDF');
     assert.equal((await fieldsOf(printable)).length, 0, 'nothing left to edit');
     assert.match(await page.locator('.prints').innerText(), /Editable PDF\s+[0-9a-f]{64}[\s\S]*Print-ready PDF\s+[0-9a-f]{64}/);
@@ -78,18 +101,155 @@ const step = async (name, work) => { try { await work(); results.push([true, nam
     await page.click('#add-mode');
   });
   await step('the same form as a PDF: its own page is kept, and the same 13 blanks are found', async () => {
-    await page.setInputFiles('#form-file', path.join(fixtures, 'form.pdf'));
-    await page.waitForFunction(() => !document.querySelector('.busy') && /form\.pdf/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 120000 });
-    assert.match(await page.locator('.panel .subtle').first().innerText(), /13 blanks found/);
-    await page.fill('#answers', ANSWERS); await page.waitForTimeout(100);
+    await openForm('form.pdf', 'form.pdf');
+    assert.match(await summary(), /13 blanks found/);
+    await typeAnswers(ANSWERS);
     assert.deepEqual(await values(), expected);
     const editable = await save('#pdf-edit', 'filled-from-pdf.pdf');
-    const text = execFileSync('pdftotext', [editable, '-']).toString();
-    assert.match(text, /Equipment Loan Request \(invented form\)/, 'the original page text is still text: the page was copied, not photographed');
+    assert.match(pdfText(editable), /Equipment Loan Request \(invented form\)/, 'the original page text is still text: the page was copied, not photographed');
     assert.equal((await fieldsOf(editable)).length, 13);
     await shot('form-2-pdf');
   });
-  await step('nothing was sent anywhere', async () => assert.deepEqual(outside, []));
+  await step('a form seen before is remembered by its fingerprint: its blanks come back at once, with no reading', async () => {
+    const started = Date.now();
+    await openForm('form-photo.png', 'remembered from last time');
+    assert.match(await summary(), /13 blanks remembered from last time/);
+    assert.ok(Date.now() - started < 8000, 'took ' + (Date.now() - started) + ' ms');
+    assert.equal(await page.locator('#refind').count(), 1);
+  });
+  await step('your details and today\'s date fill their blanks, and typed answers pass over them', async () => {
+    await page.locator('#details-panel summary').click();
+    await page.fill('[name=detail-fullName]', 'Jane Roe'); await page.click('#save-details');
+    await page.check('#use-details');
+    await typeAnswers('Respiratory Care\nVentilator');
+    const now = await values();
+    assert.deepEqual(now.slice(0, 4), ['Jane Roe', today, 'Respiratory Care', 'Ventilator']);
+    assert.match(await page.locator('.list').innerText(), /Jane Roe\s+your details/);
+    assert.match(await page.locator('.toggle').first().innerText(), /\(2 blanks\)/);
+    await typeAnswers('2) 12/01/2026. Respiratory Care');
+    assert.deepEqual((await values()).slice(1, 3), ['12/01/2026', 'Respiratory Care'], 'a numbered answer still goes where it says');
+    await shot('form-3-details');
+  });
+  await step('signing: drawn with a finger in the pad, placed as a picture in the Signature blank', async () => {
+    await typeAnswers('Respiratory Care');
+    await page.locator('[data-sign]').first().click();
+    const pad = await page.locator('dialog.pad canvas').boundingBox();
+    await page.mouse.move(pad.x + pad.width * 0.1, pad.y + pad.height * 0.6); await page.mouse.down();
+    for (const [x, y] of [[0.2, 0.3], [0.3, 0.7], [0.45, 0.25], [0.6, 0.7], [0.8, 0.4]]) await page.mouse.move(pad.x + pad.width * x, pad.y + pad.height * y, { steps: 6 });
+    await page.mouse.up();
+    await shot('form-4-sign');
+    await page.click('dialog.pad button[value=use]');
+    await page.waitForSelector('.blank img.signed');
+    const editable = await save('#pdf-edit', 'signed.pdf'), bytes = fs.readFileSync(editable).toString('latin1');
+    assert.equal((await fieldsOf(editable)).length, 12, 'the signature is a picture, not one of the fields');
+    assert.equal((bytes.match(/\/Subtype \/Image/g) || []).length, 3, 'the page picture, the signature and its see-through mask');
+    assert.match(bytes, /\/SMask/);
+    await page.click('.blank .unsign');
+    assert.equal(await page.locator('.blank img.signed').count(), 0);
+  });
+  await step('a PDF with its own fields: those are the blanks, plus the drawn signature line; the same fields are filled', async () => {
+    await openForm('fillable.pdf', 'fillable.pdf');
+    assert.match(await summary(), /9 blanks found · 8 are the PDF’s own fields/);
+    assert.equal(await page.locator('select[data-blank]').count(), 2, 'the drop-down and the radio group are choices');
+    await typeAnswers('jane@example.org. 555-0100. emer. night. x. Visiting the unit for training');
+    const editable = await save('#pdf-edit', 'fillable-filled.pdf'), fields = Object.fromEntries(await fieldsOf(editable));
+    assert.deepEqual(Object.keys(fields).sort(), ['blank-9', 'email', 'escort', 'full_name', 'phone', 'reason', 'shift', 'unit', 'visit_date'], 'its own 8 fields, one added for the signature line');
+    assert.equal(fields.full_name, 'Jane Roe'); assert.equal(fields.visit_date, today); assert.equal(fields.email, 'jane@example.org');
+    assert.equal(await page.locator('select[data-blank]').first().inputValue(), 'Emergency', 'the page shows the choice "emer" picks');
+    assert.equal(fields.unit, 'Emergency'); assert.equal(fields.shift, 'Night'); assert.equal(fields.escort, true); assert.equal(fields.reason, 'Visiting the unit for training');
+    const printable = await save('#pdf-print', 'fillable-print.pdf'), text = pdfText(printable);
+    assert.equal((await fieldsOf(printable)).length, 0);
+    for (const word of ['Jane Roe', 'jane@example.org', 'Emergency', 'Visiting the unit']) assert.ok(text.includes(word), word + ' in the print-ready PDF');
+    await shot('form-5-fillable');
+  });
+  await step('what a PDF field cannot take is said, not dropped: a choice it does not offer', async () => {
+    await typeAnswers('jane@example.org. 555-0100. Pharmacy');
+    await save('#pdf-edit', 'fillable-wrong.pdf');
+    assert.match(await page.locator('.note').innerText(), /"Pharmacy" is not one of its choices \(ICU, Emergency, Floor\)/);
+  });
+  await step('many copies from a CSV: columns matched by number, the unknown one named, one PDF with a copy per row', async () => {
+    await openForm('form.pdf', 'form.pdf');
+    await page.uncheck('#use-details'); await typeAnswers('');
+    await page.locator('#merge-panel summary').click();
+    const columns = await save('#csv-blank', 'columns.csv');
+    assert.equal(lib.parseCsv(fs.readFileSync(columns, 'utf8'))[0].length, 13);
+    const csv = path.join(scratch, 'rows.csv');
+    fs.writeFileSync(csv, '1,#4,blank 5,Color\r\nAlex Doe,Ventilator,VNT-1001,blue\r\n"Roe, Jane",Oximeter,OX-2002,\r\nSam Poe,Nebulizer,NB-3003,red\r\n');
+    await page.setInputFiles('#csv-file', csv);
+    await page.waitForSelector('#merge-go');
+    const listing = await page.locator('.columns').innerText();
+    assert.match(listing, /Color → matches no blank/); assert.match(listing, /#4 → blank 4/);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#merge-go')]);
+    const merged = path.join(scratch, 'merged.pdf'); await download.saveAs(merged);
+    assert.equal((await PDFDocument.load(fs.readFileSync(merged))).getPageCount(), 3);
+    const text = pdfText(merged);
+    for (const word of ['Alex Doe', 'Roe, Jane', 'Sam Poe', 'VNT-1001', 'OX-2002', 'NB-3003']) assert.ok(text.includes(word), word + ' in the merged PDF');
+    assert.equal((await fieldsOf(merged)).length, 0, 'merged copies are print-ready');
+    await shot('form-6-merge');
+  });
+  let templateFile;
+  await step('a template file: the photo form\'s blanks and its page picture, in plain JSON another program can read', async () => {
+    await openForm('form-photo.png', 'remembered from last time');
+    templateFile = await save('#template-save', 'template.json');
+    const template = lib.readTemplate(fs.readFileSync(templateFile, 'utf8'));
+    assert.equal(template.blanks.length, 13); assert.equal(template.form.type, 'image');
+    assert.match(template.pages[0].image, /^data:image\/jpeg;base64,/);
+  });
+  await step('offline: with no connection the page opens again and still finds a new form\'s blanks', async () => {
+    await context.setOffline(true);
+    await page.reload();
+    await page.waitForSelector('#form-file', { state: 'attached' });
+    await openForm('form.png', 'blanks found');
+    assert.match(await summary(), /13 blanks found/);
+    await context.setOffline(false);
+  });
+  await context.close();
+  ({ context, page } = await open());
+  await step('on a new device, the template file alone opens the form, its blanks in place, ready to fill', async () => {
+    await page.goto(origin);
+    await page.setInputFiles('#template-file', templateFile);
+    await page.waitForFunction(() => /remembered from last time/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 30000 });
+    await page.uncheck('#use-details'); await typeAnswers(ANSWERS);
+    assert.deepEqual(await values(), expected);
+    assert.equal((await fieldsOf(await save('#pdf-edit', 'from-template.pdf'))).length, 13);
+  });
+  await step('a template the command line made from a PDF\'s own fields (in points) lands on the page drawn in pixels', async () => {
+    const made = path.join(scratch, 'fields.json');
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/form-filler.mjs'), 'fields', path.join(fixtures, 'fillable.pdf'), '--out', made], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    await openForm('fillable.pdf', 'fillable.pdf');
+    await page.setInputFiles('#template-file', made);
+    await page.waitForFunction(() => /8 blanks remembered/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 30000 });
+    const sheet = await page.locator('.sheet').boundingBox(), first = await page.locator('[data-blank]').first().boundingBox();
+    // Full name's field: x = 160 pt of 612, top at 792 - 698 pt of 792.
+    assert.ok(Math.abs((first.x - sheet.x) / sheet.width - 160 / 612) < 0.01 && Math.abs((first.y - sheet.y) / sheet.height - 94 / 792) < 0.01, JSON.stringify([sheet, first]));
+  });
+  await step('another program can hand over answers in the link: #answers=…', async () => {
+    await page.goto(origin + '#answers=' + encodeURIComponent('Jane Roe. 11/13/2026. Nursing'));
+    await page.reload();
+    await openForm('form.png', 'blanks found');
+    await page.uncheck('#use-details');
+    assert.deepEqual((await values()).slice(0, 3), ['Jane Roe', '11/13/2026', 'Nursing']);
+  });
+  if (handwriting) await step('handwriting (synthetic: handwriting-style fonts): five lines cut, read on the device, shown beside their pictures', async () => {
+    await page.selectOption('#hand-model', 'small');
+    await page.setInputFiles('#hand-photo', path.join(fixtures, 'handwritten.png'));
+    await page.waitForFunction(() => !document.querySelector('.busy') && document.querySelectorAll('[data-hand]').length && [...document.querySelectorAll('[data-hand]')].every(input => !input.placeholder), null, { timeout: 300000 });
+    const read = await page.$$eval('[data-hand]', inputs => inputs.map(input => input.value));
+    const written = ['Jane Roe', '11/13/2026', 'Respiratory Care', 'Ventilator VNT 2219', 'Return by Friday'];
+    assert.equal(read.length, 5, JSON.stringify(read));
+    const exact = read.filter((text, index) => text === written[index]).length;
+    console.log('        read: ' + JSON.stringify(read));
+    assert.ok(exact >= 3, exact + ' of 5 lines read exactly');
+    assert.equal(await page.locator('.hand img').count(), 5);
+    await page.locator('.hand').scrollIntoViewIfNeeded(); await shot('form-7-handwriting');
+    await page.locator('[data-hand]').nth(3).fill('Ventilator VNT 2219');
+    await page.click('#hand-use');
+    assert.match(await page.inputValue('#answers'), /Ventilator VNT 2219\nReturn by Friday$/);
+  });
+  await step('nothing was sent anywhere' + (handwriting ? ' (only the handwriting model fetched from Hugging Face; no code CDN)' : ''), async () => {
+    assert.deepEqual(outside.filter(url => !(handwriting && HF.test(url))), []);
+  });
   await step('no page or console errors', async () => assert.deepEqual(problems, []));
   await browser.close(); server.close();
   const failed = results.filter(([ok]) => !ok).length;

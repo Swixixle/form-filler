@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { findBlanks, skewOf, rotate } from '../src/blanks.js';
-import { splitAnswers, placeAnswers } from '../src/answers.js';
+import { findBlanks, skewOf, rotate } from '../src/lib/blanks.js';
+import { splitAnswers, placeAnswers } from '../src/lib/answers.js';
 
 // Invented forms drawn by scripts/make-fixtures.py. Synthetic test material.
 const grayOf = name => { const png = PNG.sync.read(readFileSync(new URL('./fixtures/' + name, import.meta.url))), gray = new Uint8Array(png.width * png.height);
@@ -33,6 +33,8 @@ test('the same form as a crooked, shaded phone photo: straightened, then the sam
 test('answers: periods and new lines move on, a dash or extra period leaves a blank empty, a number jumps', () => {
   assert.deepEqual(splitAnswers('Jane Roe. 11/13/2026. Respiratory\n\nPEEP 7.5 cm. Dr. Patel. J. R. Smith').map(answer => answer.text),
     ['Jane Roe', '11/13/2026', 'Respiratory', 'PEEP 7.5 cm', 'Dr. Patel', 'J. R. Smith']);
+  assert.deepEqual(splitAnswers('jane@example.org. www.example.org/a.b. Seen at 4 p.m. Friday. v1.2').map(answer => answer.text),
+    ['jane@example.org', 'www.example.org/a.b', 'Seen at 4 p.m. Friday', 'v1.2']);
   assert.deepEqual(splitAnswers('Jane. -. Night').map(answer => answer.text), ['Jane', '', 'Night']);
   assert.deepEqual(splitAnswers('Jane.. Night').map(answer => answer.text), ['Jane', '', 'Night']);
   assert.deepEqual(splitAnswers('. Night').map(answer => answer.text), ['', 'Night']);
