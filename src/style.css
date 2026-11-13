@@ -1,0 +1,43 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172c27; background: #f5f7f4; line-height: 1.45; --green: #133b34; --line: #dce5dd; --muted: #566a61; }
+@media (prefers-color-scheme: dark) { :root { color: #e6efe9; background: #101614; --line: #2c3a35; --muted: #9db3a8; } .panel { background: #17201d !important; } textarea, input { background: #0f1513 !important; color: #e6efe9 !important; } }
+* { box-sizing: border-box; }
+body { margin: 0; }
+#app { max-width: 980px; margin: 0 auto; padding: 16px 16px 60px; }
+h1 { font-size: 2rem; letter-spacing: -.04em; margin: 8px 0 4px; }
+h2 { font-size: 1.2rem; margin: 0 0 8px; }
+.top p, .subtle, .rules { color: var(--muted); }
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; }
+.pick { position: relative; display: inline-flex; align-items: center; min-height: 48px; padding: 0 16px; border-radius: 9px; background: var(--green); color: #fff; font-weight: 700; cursor: pointer; overflow: hidden; }
+.pick.small { background: transparent; color: inherit; border: 1px solid var(--line); margin-top: 8px; font-weight: 600; }
+.pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+textarea { width: 100%; font: inherit; font-size: 1rem; border: 1px solid var(--line); border-radius: 9px; padding: 10px; min-height: 160px; }
+button { font: inherit; min-height: 44px; border-radius: 9px; padding: 0 14px; font-weight: 700; cursor: pointer; }
+.primary { background: var(--green); color: #fff; border: 1px solid var(--green); }
+.secondary { background: transparent; color: inherit; border: 1px solid #b7c9bd; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.list { padding-left: 1.6em; margin: 10px 0 0; display: grid; gap: 2px; }
+.list .label { color: var(--muted); }
+.note { background: #fff6e5; border: 1px solid #ecd19a; color: #5b4310; border-radius: 9px; padding: 10px 12px; margin: 10px 0; }
+.busy { background: #e9f3ea; border-radius: 9px; padding: 10px 12px; margin: 10px 0; font-weight: 600; }
+.bar { height: 5px; background: #d4e4d6; border-radius: 9px; overflow: hidden; margin-top: 6px; }
+.bar i { display: block; width: 40%; height: 100%; background: #4f8f5a; animation: go 1.4s infinite alternate ease-in-out; }
+@keyframes go { to { transform: translateX(150%); } }
+.sheet { position: relative; margin: 12px 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; touch-action: pan-y; }
+.sheet.adding { touch-action: none; cursor: crosshair; outline: 3px dashed #4f8f5a; }
+.sheet img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.blank { position: absolute; display: flex; align-items: flex-end; }
+.blank textarea { width: 100%; height: 100%; min-height: 0; border: 0; resize: none; background: rgba(79, 143, 90, .12); color: #0d1a59; font: 600 clamp(9px, 1.6vw, 18px) Helvetica, Arial, sans-serif; padding: 2px 3px; border-radius: 2px; }
+.blank input:not([type=checkbox]) { width: 100%; height: 100%; border: 0; background: rgba(79, 143, 90, .12); color: #0d1a59; font: 600 clamp(9px, 1.6vw, 18px) Helvetica, Arial, sans-serif; padding: 0 3px; border-radius: 2px; }
+.blank input[type=checkbox] { width: 100%; height: 100%; margin: 0; accent-color: #0d1a59; }
+.blank .tag { position: absolute; left: -2px; top: -12px; font: 700 10px/1 system-ui; color: #fff; background: #4f8f5a; border-radius: 6px; padding: 1px 4px; pointer-events: none; }
+.blank .remove { position: absolute; right: -10px; top: -14px; min-height: 0; width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 0; background: #b42318; color: #fff; }
+.drawing { position: absolute; border: 2px solid #4f8f5a; background: rgba(79, 143, 90, .18); pointer-events: none; }
+.prints { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: .78rem; color: var(--muted); }
+.prints dd { margin: 0; font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+@media print {
+  body * { visibility: hidden; }
+  .sheet, .sheet * { visibility: visible; }
+  .sheet { position: relative; border: 0; break-after: page; }
+  .blank input:not([type=checkbox]), .blank textarea { background: transparent; }
+  .blank .tag, .blank .remove { display: none; }
+}
