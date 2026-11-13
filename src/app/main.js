@@ -248,7 +248,7 @@ function pageMarkup(page, index, values, fixed) {
 }
 const shown = (blank, value) => isSignature(value) ? '✍ signed' : blank.kind === 'check' ? (value ? '☑' : '☐')
   : blank.kind === 'choice' && value ? (pickOption(blank.options, value) ? '<b>' + h(pickOption(blank.options, value)) + '</b>' : '<b class="miss">' + h(value) + '</b> (not one of: ' + h(blank.options.join(', ')) + ')') : '<b>' + h(value || '—') + '</b>';
-const listMarkup = (values, fixed) => blanks.map((blank, index) => '<li><span class="label">' + h(blank.label || (blank.kind === 'check' ? 'checkbox' : 'blank')) + '</span> ' + shown(blank, values[index]) + (fixed.has(index) && !(blank.id in overrides) && values[index] === fixed.get(index) ? ' <span class="from">your details</span>' : '') + '</li>').join('');
+const listMarkup = (values, fixed) => blanks.map((blank, index) => '<li><span class="label">' + h(blank.label || (blank.kind === 'check' ? 'checkbox' : 'blank')) + '</span> ' + shown(blank, values[index]) + (fixed.has(index) && !(blank.id in overrides) && values[index] === fixed.get(index) ? ' <span class="from">filled for you</span>' : '') + '</li>').join('');
 
 function detailsPanel() {
   return '<details class="panel" id="details-panel"' + (store.get('detailsOpen', false) ? ' open' : '') + '><summary><h2>Your details</h2></summary>' +
@@ -283,7 +283,7 @@ function render() {
     (problems.length ? '<div class="note" role="status"><b>Not everything went in as written:</b><ul>' + problems.map(problem => '<li>' + h(problem) + '</li>').join('') + '</ul></div>' : '') +
     '<section class="panel"><h2>1. The form</h2><div class="tools"><label class="pick">' + (form ? 'Use a different form' : 'Choose the form: a photo, a scan or a PDF') +
     '<input id="form-file" type="file" accept="image/*,application/pdf,.pdf"></label><label class="pick small">Open a template<input id="template-file" type="file" accept=".json,application/json"></label></div>' +
-    (form ? '<p class="subtle">' + h(form.name) + ' · ' + form.pages.length + ' page' + (form.pages.length === 1 ? '' : 's') + ' · ' + blanks.length + ' blank' + (blanks.length === 1 ? '' : 's') + (remembered ? ' remembered from last time' : ' found') +
+    (form ? '<p class="subtle">' + h(form.name) + ' · ' + form.pages.length + ' page' + (form.pages.length === 1 ? '' : 's') + (busy ? ' · finding the blanks…' : ' · ' + blanks.length + ' blank' + (blanks.length === 1 ? '' : 's') + (remembered ? ' remembered from last time' : ' found')) +
       (form.fieldCount ? ' · ' + form.fieldCount + ' are the PDF’s own fields' : '') + (form.pages[0].angle ? ' · straightened ' + Math.abs(form.pages[0].angle) + '°' : '') + '</p>' +
       '<div class="tools"><button type="button" id="template-save" class="secondary">Save this form as a template</button>' + (remembered && form.bytes ? '<button type="button" id="refind" class="secondary">Find the blanks again</button>' : '') + '</div>' : '') + '</section>' +
     (form ? '<section class="panel"><h2>2. Your answers</h2><p class="rules">One answer after another, in the form’s order. A <b>period</b> or a <b>new line</b> moves to the next blank. ' +

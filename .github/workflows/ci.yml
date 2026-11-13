@@ -1,0 +1,24 @@
+# Every push and pull request: the unit and command-line tests, a build, and the whole page walked in Chromium at
+# phone size. The handwriting step is left out here (it downloads a 64 MB model); run it on a computer with
+#   node scripts/walk.cjs dist --handwriting
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: npm test
+      - run: npm run build
+      - run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - run: node scripts/walk.cjs dist

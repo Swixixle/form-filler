@@ -8,6 +8,7 @@ const here = process.cwd();
 const core = resolve(here, 'node_modules/tesseract.js-core');
 await mkdir(resolve(here, 'public/ocr'), { recursive: true });
 await mkdir(resolve(here, 'public/ort'), { recursive: true });
+await mkdir(resolve(here, 'public/licenses'), { recursive: true });
 await cp('node_modules/tesseract.js/dist/worker.min.js', 'public/ocr/worker.min.js');
 for (const filename of await readdir(core)) {
   // Only the builds Tesseract.js loads for its LSTM engine (the one used here), each with its WebAssembly inside:
@@ -22,6 +23,8 @@ for (const [path, name] of [
   ['node_modules/@tesseract.js-data/eng/LICENSE', 'ocr/Tesseract-English.txt'],
   ['node_modules/onnxruntime-web/LICENSE', 'ort/ONNX-Runtime.txt'],
   ['node_modules/@huggingface/transformers/LICENSE', 'ort/Transformers.js.txt'],
+  ['node_modules/pdf-lib/LICENSE.md', 'licenses/pdf-lib.txt'],
+  ['node_modules/pdfjs-dist/LICENSE', 'licenses/pdf.js.txt'],
 ]) {
   await cp(path, 'public/' + name).catch(error => { if (error.code !== 'ENOENT') throw error; });
 }

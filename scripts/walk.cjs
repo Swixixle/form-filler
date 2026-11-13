@@ -124,7 +124,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await typeAnswers('Respiratory Care\nVentilator');
     const now = await values();
     assert.deepEqual(now.slice(0, 4), ['Jane Roe', today, 'Respiratory Care', 'Ventilator']);
-    assert.match(await page.locator('.list').innerText(), /Jane Roe\s+your details/);
+    assert.match(await page.locator('.list').innerText(), /Jane Roe\s+filled for you/);
     assert.match(await page.locator('.toggle').first().innerText(), /\(2 blanks\)/);
     await typeAnswers('2) 12/01/2026. Respiratory Care');
     assert.deepEqual((await values()).slice(1, 3), ['12/01/2026', 'Respiratory Care'], 'a numbered answer still goes where it says');
