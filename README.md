@@ -91,22 +91,44 @@ fingerprints.
 **The library** (`src/lib/index.js`, ES module, Node 22 or a browser; its only dependency is pdf-lib):
 
 ```js
-import { readFields, readTemplate, placeAnswers, buildPdf } from 'form-filler';
-const { blanks } = await readFields(pdfBytes);                     // a PDF's own fields, in points
+import { readFields, placeAnswers, buildPdf } from 'form-filler';
+
+// A PDF's own fields, in points.
+const { blanks } = await readFields(pdfBytes);
+
+// Loose answers, one per blank, in order.
 const { values } = placeAnswers(blanks, 'Jane Roe. jane@example.org. 555-0100. -. icu');
-const filled = await buildPdf({ pages: [{ width: 612, height: 792, pdfPage: 0 }], blanks, values, sourcePdf: pdfBytes, editable: true });
+
+const filled = await buildPdf({
+  pages: [{ width: 612, height: 792, pdfPage: 0 }],
+  blanks,
+  values,
+  sourcePdf: pdfBytes,
+  editable: true,
+});
 ```
 
-Also: `findBlanks` (from a page's grayscale pixels), `autofill`, `parseCsv`/`matchColumns`/`rowValues`, `joinPdfs`,
+Also: `readTemplate`, `findBlanks` (from a page's grayscale pixels), `numberedLines` (answers written after their blank's number), `autofill`, `parseCsv`/`matchColumns`/`rowValues`, `joinPdfs`,
 `makeTemplate`, `segmentLines`. Install it from GitHub: `npm install github:Swixixle/form-filler`.
 
 **The command line** (`bin/form-filler.mjs`, no browser, no network):
 
 ```sh
-form-filler fields form.pdf --out form.json            # a template from a PDF's own fields
-form-filler check form.json                            # what a template holds, or what is wrong with it
-form-filler fill --template form.json --form form.pdf --answers "Jane Roe. 555-0100. icu" --out filled.pdf
-form-filler fill --template form.json --form form.pdf --csv people.csv --out all.pdf
+# A template from a PDF's own fields
+form-filler fields form.pdf --out form.json
+
+# What a template holds, or what is wrong with it
+form-filler check form.json
+
+# One filled copy
+form-filler fill --template form.json --form form.pdf \
+  --answers "Jane Roe. 555-0100. icu" --out filled.pdf
+
+# One copy per row of a CSV
+form-filler fill --template form.json --form form.pdf \
+  --csv people.csv --out all.pdf
+
+# Your details and a fixed date; print-ready; fail on anything that did not go in
 form-filler fill ... --details me.json --today 2026-11-13 --print --strict
 ```
 
