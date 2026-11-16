@@ -6,6 +6,38 @@ uploaded. It installs like an app (Add to Home Screen) and works offline after t
 
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
+**Open it:** <https://swixixle.github.io/form-filler/>
+
+## How it works: a form from an e-mail, filled from a sheet of paper
+
+The pictures below are the live page. The forms and the handwriting are invented: the "handwriting" is a
+handwriting-style font, not a person's hand (see [What it cannot do](#what-it-cannot-do-yet)).
+
+**1. Open the form.** A photo, a screenshot or a PDF. Every place to write is found, shaded and numbered. "Date" is
+filled with today.
+
+<img src="docs/screenshots/1-numbered-form.png" width="420" alt="A photographed form with each blank shaded and numbered 1 to 13">
+
+**2. Write your answers on paper, each after its blank's number,** in any order. Photograph the page and tap
+*Read handwriting*.
+
+<img src="docs/screenshots/2-paper.png" width="420" alt="Ruled paper with five handwritten lines: 1 Jane Roe, 3 Respiratory Care, 4 Ventilator, 5 VNT 2219, 11 yes">
+
+**3. Check what was read.** Each line is shown beside what the reader made of it, so a wrong word is fixed before it
+goes in. The reader runs on the device; the photo is not uploaded.
+
+<img src="docs/screenshots/3-paper-read.png" width="330" alt="Each handwritten line shown as a picture, with the text read from it underneath">
+
+**4. Each answer is in its blank.** Change any of them on the form itself, sign with a finger, then *Send…* (Mail,
+Messages) or download the PDF.
+
+<img src="docs/screenshots/4-paper-placed.png" width="420" alt="The form with Jane Roe in blank 1, Respiratory Care in 3, Ventilator in 4, VNT 2219 in 5, and Night ticked">
+
+**On a computer**, drop or paste the form onto the page and type the answers beside it; ⌘S downloads the PDF. A PDF
+with its own fill-in fields is filled in those fields, radio buttons included.
+
+<img src="docs/screenshots/5-computer.png" alt="On a wide screen: the answers box on the left, the filled and signed form on the right">
+
 ## The shortcuts
 
 - **Blanks found for you.** From a photo or scan, the blanks are found from the page's own lines: a line to write on,
@@ -89,6 +121,8 @@ form-filler fill ... --details me.json --today 2026-11-13 --print --strict
 
 ## What it cannot do (yet)
 
+- **The blank numbers sit over the start of a label** on a photographed form ("Na… 1", "Departm… 3" above). The list
+  under *Your answers* gives each number with its whole label.
 - **Real handwriting has not been measured.** The tests use handwriting-style fonts (Caveat, Patrick Hand) drawn on
   ruled paper. On that page the quick reader read all five lines right in Chromium and one digit wrong in Node (1.4%
   of characters); the larger one got the date wrong (11.6%). A person's own hand will do worse, joined-up writing worst. Lines must be
