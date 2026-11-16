@@ -26,6 +26,10 @@ test('a PDF with its own fields: every field is a blank, with its kind, choices 
   assert.deepEqual(blanks[4].options, ['ICU', 'Emergency', 'Floor']);
   assert.deepEqual(blanks[5].options, ['Day', 'Night']);
   assert.ok(Math.abs(blanks[5].x1 - (240 + 14) * SCALE) < 1, 'the radio blank spans both its buttons: ' + JSON.stringify(blanks[5]));
+  assert.deepEqual(blanks[5].spots.map(spot => spot.option), ['Day', 'Night'], 'each radio button knows its option');
+  assert.ok(blanks[5].spots[0].x1 < blanks[5].spots[1].x0, 'the Day button sits left of the Night button: ' + JSON.stringify(blanks[5].spots));
+  assert.ok(Math.abs(blanks[5].spots[1].x1 - blanks[5].x1) < 1, 'the last button ends where the group does');
+  assert.equal(blanks[4].spots, undefined, 'a drop-down has no buttons');
   assert.equal(blanks[7].multiline, true);
   // Full name's field is at x=160 pt, y=680 pt (from the bottom of a 792 pt page), 300 by 18 pt.
   assert.ok(Math.abs(blanks[0].x0 - 160 * SCALE) < 1 && Math.abs(blanks[0].y1 - (792 - 680) * SCALE) < 1, JSON.stringify(blanks[0]));
@@ -133,4 +137,22 @@ test('a handwritten page (handwriting-style fonts on ruled paper) is cut into it
   assert.equal(lines.length, 5, JSON.stringify(lines));
   // Each line sits on its own rule (every 150 px) and starts after the margin line at x=140.
   lines.forEach((line, index) => { assert.ok(line.y1 > 150 * (index + 1) - 90 && line.y0 < 150 * (index + 1), 'line ' + (index + 1) + ': ' + JSON.stringify(line)); assert.ok(line.x0 > 150, 'margin left out: ' + JSON.stringify(line)); });
+});
+
+test('answers written on paper with the blank number in front go to those blanks; answers in order are left alone', () => {
+  const read = lib.numberedLines('3 Jane Roe\n1. 555-0100\n#7 - ICU\n12) yes', 13);
+  assert.equal(read.numbered, 4);
+  assert.equal(read.text, '3) Jane Roe\n1) 555-0100\n7) ICU\n12) yes');
+  const blanks = Array.from({ length: 13 }, () => ({ kind: 'box' }));
+  const { values } = lib.placeAnswers(blanks, read.text);
+  assert.equal(values[2], 'Jane Roe'); assert.equal(values[0], '555-0100'); assert.equal(values[6], 'ICU'); assert.equal(values[11], 'yes');
+  // In order, with one answer that happens to start with a number: not taken for numbering.
+  assert.deepEqual(lib.numberedLines('Jane Roe\n555-0100\n2 tablets\nICU', 13), { text: 'Jane Roe\n555-0100\n2 tablets\nICU', numbered: 0, unnumbered: [] });
+  // What the handwriting reader made of a synthetic numbered page: "9 x" came back as "qx". It is set aside, not put
+  // in blank 3 (after "2) Ventilator"), where it would have covered Jane Roe.
+  const page = lib.numberedLines('3 Jane Roe\n1 11.1312026\n7 Respiratory Care\n2 Ventilator\nqx', 13);
+  assert.deepEqual(page.unnumbered, ['qx']);
+  assert.equal(lib.placeAnswers(blanks, page.text).values[2], 'Jane Roe');
+  // A number the form does not have is not a blank number.
+  assert.equal(lib.numberedLines('40 Main St\n41 Oak Ave', 13).numbered, 0);
 });

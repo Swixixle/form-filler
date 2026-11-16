@@ -4,7 +4,7 @@
 //
 // blanks.js needs the page's pixels (gray, one byte per pixel); the rest work on JSON and PDF bytes alone.
 export { threshold, skewOf, rotate, findBlanks, order, labelFor } from './blanks.js';
-export { TICK, splitAnswers, placeAnswers } from './answers.js';
+export { TICK, splitAnswers, placeAnswers, numberedLines } from './answers.js';
 export { readFields, readableName, pickOption, withFound } from './fields.js';
 export { plain, fitSize, wrap, isSignature, buildPdf, joinPdfs } from './output.js';
 export { KINDS, makeTemplate, readTemplate } from './templates.js';

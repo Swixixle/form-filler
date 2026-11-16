@@ -1,6 +1,6 @@
 import './style.css';
 import { findBlanks, skewOf, order, labelFor } from '../lib/blanks.js';
-import { placeAnswers } from '../lib/answers.js';
+import { placeAnswers, numberedLines } from '../lib/answers.js';
 import { buildPdf, joinPdfs, isSignature } from '../lib/output.js';
 import { readFields, withFound, pickOption } from '../lib/fields.js';
 import { makeTemplate, readTemplate } from '../lib/templates.js';
@@ -93,6 +93,8 @@ const fits = template => template.pages.length === form.pages.length && template
 const useTemplate = template => {
   blanks = template.blanks.map(blank => { const from = template.pages[blank.page], to = form.pages[blank.page], sx = to.width / from.width, sy = to.height / from.height;
     return { ...blank, x0: blank.x0 * sx, x1: blank.x1 * sx, y0: blank.y0 * sy, y1: blank.y1 * sy, id: nextId++ }; });
+  // A template keeps a radio group as one blank; the buttons inside it come from the PDF itself, when it is open.
+  for (const blank of blanks) { const own = blank.choice === 'radio' && blank.field ? (form.fields || []).find(field => field.field === blank.field && field.spots) : null; if (own) blank.spots = own.spots; }
   overrides = {};
 };
 
@@ -109,10 +111,12 @@ async function openForm(file) {
     if (own) {
       if (own.encrypted) notes.push('This PDF is locked against changes, so the filled copy is made from pictures of its pages.');
       else if (own.rotated) notes.push('This PDF has turned pages, so its own fill-in fields are not used; the blanks are found from the page instead.');
-      else fields = own.blanks.filter(blank => blank.page < pages.length).map(blank => { const { scale } = pages[blank.page]; return { ...blank, x0: blank.x0 * scale, x1: blank.x1 * scale, y0: blank.y0 * scale, y1: blank.y1 * scale }; });
+      else fields = own.blanks.filter(blank => blank.page < pages.length).map(blank => { const { scale } = pages[blank.page], sized = box => ({ ...box, x0: box.x0 * scale, x1: box.x1 * scale, y0: box.y0 * scale, y1: box.y1 * scale });
+        return { ...sized(blank), ...(blank.spots ? { spots: blank.spots.map(sized) } : {}) }; });
       if (own.xfa && !fields.length) notes.push('This PDF is an XFA form (an Adobe-only kind). Its own fields cannot be read here; blanks are found from what the page shows.');
       form.fieldCount = fields.length;
     }
+    form.fields = fields;
     const saved = store.get('template:' + form.hash, null);
     let template = null;
     try { template = saved ? readTemplate(saved) : null; } catch { template = null; }
@@ -138,6 +142,7 @@ async function openForm(file) {
     note = notes.join(' ');
   } catch (error) { form = null; note = error.message || String(error); }
   busy = ''; render();
+  if (form && matchMedia('(pointer: fine)').matches) document.getElementById('answers')?.focus({ preventScroll: true });
 }
 
 // A form opened from a template file alone: possible when the template carries its page pictures (a photographed form).
@@ -175,9 +180,10 @@ async function readPrinted(file) {
     const bitmap = await imageCanvas(file), scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height)), canvas = canvasOf(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const ocr = await reader();
-    try { await ocr.setParameters({ tessedit_pageseg_mode: '4' }); const { data } = await ocr.recognize(canvas); answers = (answers.trim() ? answers.trim() + '\n' : '') + (data.text || '').trim(); }
+    let numbered = 0, left = [];
+    try { await ocr.setParameters({ tessedit_pageseg_mode: '4' }); const { data } = await ocr.recognize(canvas); const read = numberedLines((data.text || '').trim(), blanks.length); numbered = read.numbered; left = read.unnumbered; answers = (answers.trim() ? answers.trim() + '\n' : '') + read.text; }
     finally { await ocr.terminate(); }
-    note = 'Check what was read before you use it.';
+    note = (numbered ? numbered + ' lines start with a blank’s number, so each goes to that blank. ' : '') + unplaced(left) + 'Check what was read before you use it.';
   } catch (error) { note = 'The photo could not be read: ' + (error.message || error); }
   busy = ''; render();
 }
@@ -223,6 +229,7 @@ async function readHandwriting(file) {
   busy = ''; render();
 }
 
+const unplaced = lines => lines.length ? 'Left out, because no blank number could be read at the start: ' + lines.map(line => '“' + line + '”').join(', ') + '. Type those in with their number, like “9) yes”. ' : '';
 function reorder() {
   blanks = form.pages.flatMap((_, page) => order(blanks.filter(blank => blank.page === page), 20).map(blank => blanks.find(item => item.id === blank.id) || blank));
 }
@@ -233,6 +240,13 @@ function blankInput(blank, number, value) {
   const name = ' data-blank="' + blank.id + '" aria-label="' + blankName(blank, number) + '"';
   if (isSignature(value)) return '<img class="signed" alt="Signature" src="' + value.signature + '"><button type="button" class="unsign" data-unsign="' + blank.id + '" aria-label="Take the signature off blank ' + (number + 1) + '">×</button>';
   if (blank.kind === 'check') return '<input type="checkbox"' + name + (value ? ' checked' : '') + '>';
+  // A radio group: a button over each of the form's own buttons, so the words printed beside them stay readable.
+  if (blank.kind === 'choice' && blank.spots?.length) {
+    const picked = pickOption(blank.options, value), width = blank.x1 - blank.x0, height = blank.y1 - blank.y0, pct = (part, whole) => (part / whole * 100).toFixed(3) + '%';
+    return blank.spots.map(spot => '<input type="radio" class="spot" name="radio-' + blank.id + '" data-blank="' + blank.id + '" value="' + h(spot.option) + '" aria-label="' + blankName(blank, number) + ': ' + h(spot.option) + '"' +
+      ' style="left:' + pct(spot.x0 - blank.x0, width) + ';top:' + pct(spot.y0 - blank.y0, height) + ';width:' + pct(spot.x1 - spot.x0, width) + ';height:' + pct(spot.y1 - spot.y0, height) + '"' + (spot.option === picked ? ' checked' : '') + '>').join('') +
+      (value && !picked ? '<span class="radio-miss" title="“' + h(value) + '” is not one of its choices">?</span>' : '');
+  }
   if (blank.kind === 'choice') { const picked = pickOption(blank.options, value); return '<select' + name + (value && !picked ? ' class="unmatched" title="“' + h(value) + '” is not one of its choices"' : '') + '><option value=""></option>' + blank.options.map(option => '<option' + (option === picked ? ' selected' : '') + '>' + h(option) + '</option>').join('') + '</select>'; }
   const sign = signable(blank) && !adding ? '<button type="button" class="sign" data-sign="' + blank.id + '">Sign</button>' : '';
   return (blank.y1 - blank.y0 > 90 || blank.multiline ? '<textarea' + name + '>' + h(value) + '</textarea>' : '<input' + name + ' value="' + h(value) + '">') + sign;
@@ -276,19 +290,22 @@ function handPanel() {
 function render() {
   const { finals, extra, fixed } = form ? current() : { finals: [], extra: [], fixed: new Map() };
   const model = store.get('handModel', 'small');
-  app.innerHTML = '<header class="top"><h1>Form Filler</h1><p>Photograph or open a form, write your answers anywhere as plain lines, and get the form back filled in. ' +
+  app.classList.toggle('open', Boolean(form));
+  app.innerHTML = '<main><header class="top"><h1>Form Filler</h1><p>Photograph or open a form, write your answers anywhere as plain lines, and get the form back filled in. ' +
     '<b>Everything happens on this device.</b> Nothing is uploaded.</p></header>' +
     (busy ? '<div class="busy" role="status">' + h(busy) + '<div class="bar"><i></i></div></div>' : '') +
     (note ? '<div class="note" role="status">' + h(note) + (pendingTemplate ? ' <button type="button" id="template-anyway" class="secondary">Use it on this form anyway</button>' : '') + '</div>' : '') +
     (problems.length ? '<div class="note" role="status"><b>Not everything went in as written:</b><ul>' + problems.map(problem => '<li>' + h(problem) + '</li>').join('') + '</ul></div>' : '') +
     '<section class="panel"><h2>1. The form</h2><div class="tools"><label class="pick">' + (form ? 'Use a different form' : 'Choose the form: a photo, a scan or a PDF') +
     '<input id="form-file" type="file" accept="image/*,application/pdf,.pdf"></label><label class="pick small">Open a template<input id="template-file" type="file" accept=".json,application/json"></label></div>' +
+    '<p class="hint desk">Or drop a form anywhere on this page, or paste a screenshot of one (⌘V / Ctrl+V).</p>' +
     (form ? '<p class="subtle">' + h(form.name) + ' · ' + form.pages.length + ' page' + (form.pages.length === 1 ? '' : 's') + (busy ? ' · finding the blanks…' : ' · ' + blanks.length + ' blank' + (blanks.length === 1 ? '' : 's') + (remembered ? ' remembered from last time' : ' found')) +
       (form.fieldCount ? ' · ' + form.fieldCount + ' are the PDF’s own fields' : '') + (form.pages[0].angle ? ' · straightened ' + Math.abs(form.pages[0].angle) + '°' : '') + '</p>' +
       '<div class="tools"><button type="button" id="template-save" class="secondary">Save this form as a template</button>' + (remembered && form.bytes ? '<button type="button" id="refind" class="secondary">Find the blanks again</button>' : '') + '</div>' : '') + '</section>' +
-    (form ? '<section class="panel"><h2>2. Your answers</h2><p class="rules">One answer after another, in the form’s order. A <b>period</b> or a <b>new line</b> moves to the next blank. ' +
-      'A lone <b>-</b> leaves a blank empty. <b>4)</b> at the start puts that answer in blank 4. For a checkbox, <b>x</b> or <b>yes</b> ticks it; for a choice, the first letters of it are enough.' +
-      (useDetails && fixed.size ? ' Blanks already filled from your details are passed over.' : '') + '</p>' +
+    (form ? '<div class="work"><section class="panel answers-panel"><h2>2. Your answers</h2><p class="rules">In the form’s order. A <b>period</b> or a <b>new line</b> moves to the next blank; a lone <b>-</b> skips one.' +
+      (useDetails && fixed.size ? ' Blanks filled from your details are passed over.' : '') + '</p>' +
+      '<details class="more" id="rules-more"' + (store.get('rulesOpen', false) ? ' open' : '') + '><summary>More ways to write answers</summary><p class="rules"><b>4)</b> or <b>4:</b> at the start puts that answer in blank 4. ' +
+      'For a checkbox, <b>x</b> or <b>yes</b> ticks it; for a choice, its first letters are enough (“emer” picks Emergency). A period inside a number (7.38), after an initial (J. Smith) or in an e-mail address stays in the answer.</p></details>' +
       '<label class="toggle"><input type="checkbox" id="use-details"' + (useDetails ? ' checked' : '') + '> Fill my details and today’s date' + (useDetails ? ' (' + fixed.size + ' blank' + (fixed.size === 1 ? '' : 's') + ')' : '') + '</label>' +
       '<textarea id="answers" rows="8" placeholder="Jane Roe. 11/13/2026. Respiratory Care&#10;Ventilator. VNT-2219. 1">' + h(answers) + '</textarea>' +
       '<div class="tools"><label class="pick small">Read a printed page<input id="answers-photo" type="file" accept="image/*"></label>' +
@@ -297,12 +314,13 @@ function render() {
       handPanel() +
       '<ol class="list">' + listMarkup(finals, fixed) + '</ol>' +
       (extra.length ? '<p class="note">More answers than blanks. Not placed: ' + h(extra.join(' / ')) + '</p>' : '') + '</section>' +
-      '<section class="panel"><h2>3. The filled form</h2><p class="subtle">Tap any answer on the form to change it there. Missed a blank? Add it, then drag across the place to write.</p>' +
+      '<section class="panel filled-panel">' +
+      '<h2>3. The filled form</h2><p class="subtle">Tap any answer on the form to change it there. Missed a blank? Add it, then drag across the place to write.</p>' +
       '<div class="tools"><button type="button" id="add-mode" class="secondary">' + (adding ? 'Done adding' : 'Add or remove a blank') + '</button></div>' +
       form.pages.map((page, index) => pageMarkup(page, index, finals, fixed)).join('') +
-      '<div class="tools"><button type="button" id="pdf-edit" class="primary">Download PDF you can still edit</button><button type="button" id="pdf-print" class="secondary">Download print-ready PDF</button><button type="button" id="print" class="secondary">Print</button></div>' +
-      '<dl class="prints"><dt>Form</dt><dd>' + form.hash + '</dd><dt>Answers</dt><dd id="answers-print">…</dd>' + Object.entries(prints).map(([name, value]) => '<dt>' + h(name) + '</dt><dd>' + value + '</dd>').join('') + '</dl></section>' : '') +
-    mergePanel() + detailsPanel();
+      '<div class="tools"><button type="button" id="pdf-edit" class="primary" title="Also ⌘S / Ctrl+S">Download PDF you can still edit</button>' + (canShareFiles ? '<button type="button" id="pdf-send" class="primary">Send… (e-mail, Messages)</button>' : '') + '<button type="button" id="pdf-print" class="secondary">Download print-ready PDF</button><button type="button" id="print" class="secondary">Print</button></div>' +
+      '<dl class="prints"><dt>Form</dt><dd>' + form.hash + '</dd><dt>Answers</dt><dd id="answers-print">…</dd>' + Object.entries(prints).map(([name, value]) => '<dt>' + h(name) + '</dt><dd>' + value + '</dd>').join('') + '</dl></section></div>' : '') +
+    mergePanel() + detailsPanel() + '</main>';
   void sha256(answers).then(print => { const slot = document.getElementById('answers-print'); if (slot) slot.textContent = print; });
 }
 
@@ -311,7 +329,8 @@ function refreshValues() {
   blanks.forEach((blank, index) => {
     const input = app.querySelector('[data-blank="' + blank.id + '"]');
     if (!input || input === document.activeElement) return;
-    if (input.type === 'checkbox') input.checked = Boolean(finals[index]);
+    if (input.type === 'radio') { const picked = pickOption(blank.options, finals[index]); for (const button of app.querySelectorAll('[data-blank="' + blank.id + '"]')) button.checked = button.value === picked; }
+    else if (input.type === 'checkbox') input.checked = Boolean(finals[index]);
     else if (input.tagName === 'SELECT') { const picked = pickOption(blank.options, finals[index]) ?? ''; input.value = picked; input.classList.toggle('unmatched', Boolean(finals[index]) && !picked); }
     else if (!isSignature(finals[index])) input.value = finals[index] ?? '';
   });
@@ -328,17 +347,41 @@ const save = (bytes, name, type = 'application/pdf') => {
 };
 const baseName = () => form.name.replace(/\.[^.]+$/, '');
 
+async function makePdf(editable) {
+  const { finals } = current(), found = [];
+  const bytes = await buildPdf({ pages: await pagesForPdf(), blanks, values: finals, sourcePdf: form.pdf ? form.bytes : null, editable, problems: found,
+    note: 'Filled with Form Filler. Form SHA-256 ' + form.hash + '. Answers SHA-256 ' + await sha256(answers) + '.' });
+  problems = found;
+  prints[editable ? 'Editable PDF' : 'Print-ready PDF'] = await sha256(bytes);
+  return bytes;
+}
 async function download(editable) {
   busy = 'Making the PDF…'; render();
-  try {
-    const { finals } = current(), found = [];
-    const bytes = await buildPdf({ pages: await pagesForPdf(), blanks, values: finals, sourcePdf: form.pdf ? form.bytes : null, editable, problems: found,
-      note: 'Filled with Form Filler. Form SHA-256 ' + form.hash + '. Answers SHA-256 ' + await sha256(answers) + '.' });
-    problems = found;
-    prints[editable ? 'Editable PDF' : 'Print-ready PDF'] = await sha256(bytes);
-    save(bytes, baseName() + (editable ? ' - filled.pdf' : ' - filled, print-ready.pdf'));
-  } catch (error) { note = 'The PDF could not be made: ' + (error.message || error); }
+  try { save(await makePdf(editable), baseName() + (editable ? ' - filled.pdf' : ' - filled, print-ready.pdf')); }
+  catch (error) { note = 'The PDF could not be made: ' + (error.message || error); }
   busy = ''; render();
+}
+// Sending the filled form straight to Mail, Messages or anything else the device offers (the share sheet). Where the
+// device has no share sheet for files, the button is not shown. A browser can refuse to share after the PDF took a
+// moment to make (the tap has "expired"); then the PDF is kept ready and the next tap sends it at once.
+const canShareFiles = (() => { try { return Boolean(navigator.canShare?.({ files: [new File(['%PDF'], 'form.pdf', { type: 'application/pdf' })] })); } catch { return false; } })();
+let readyToSend = null;
+async function send() {
+  const key = JSON.stringify(current().finals);
+  try {
+    if (readyToSend?.key !== key) {
+      busy = 'Making the PDF to send…'; render();
+      readyToSend = { key, file: new File([await makePdf(true)], baseName() + ' - filled.pdf', { type: 'application/pdf' }) };
+      busy = ''; render();
+    }
+    await navigator.share({ files: [readyToSend.file], title: baseName() + ' - filled' });
+    note = '';
+  } catch (error) {
+    busy = '';
+    if (error.name === 'NotAllowedError') note = 'The filled PDF is ready. Tap “Send” once more to send it.';
+    else if (error.name !== 'AbortError') note = 'The PDF could not be sent: ' + (error.message || error);
+  }
+  render();
 }
 
 async function makeMerge() {
@@ -424,15 +467,15 @@ app.addEventListener('change', event => {
     catch (error) { merge = null; note = error.message || String(error); }
     render();
   });
-  if (target.dataset.blank && (target.type === 'checkbox' || target.tagName === 'SELECT')) { overrides[target.dataset.blank] = target.type === 'checkbox' ? target.checked : target.value; refreshValues(); }
+  if (target.dataset.blank && (target.type === 'checkbox' || target.type === 'radio' || target.tagName === 'SELECT')) { overrides[target.dataset.blank] = target.type === 'checkbox' ? target.checked : target.value; refreshValues(); }
 });
 app.addEventListener('input', event => {
   const target = event.target;
   if (target.id === 'answers') { answers = target.value; refreshValues(); }
-  if (target.dataset.blank && target.type !== 'checkbox' && target.tagName !== 'SELECT') { overrides[target.dataset.blank] = target.value; refreshValues(); }
+  if (target.dataset.blank && target.type !== 'checkbox' && target.type !== 'radio' && target.tagName !== 'SELECT') { overrides[target.dataset.blank] = target.value; refreshValues(); }
   if (target.dataset.hand) hand.lines[Number(target.dataset.hand)].text = target.value;
 });
-app.addEventListener('toggle', event => { if (event.target.id === 'details-panel') store.set('detailsOpen', event.target.open); }, true);
+app.addEventListener('toggle', event => { if (event.target.id === 'details-panel') store.set('detailsOpen', event.target.open); if (event.target.id === 'rules-more') store.set('rulesOpen', event.target.open); }, true);
 app.addEventListener('click', event => {
   const target = event.target.closest('button');
   if (!target) return;
@@ -442,13 +485,18 @@ app.addEventListener('click', event => {
   if (target.dataset.unsign) { delete overrides[target.dataset.unsign]; render(); }
   if (target.id === 'pdf-edit') void download(true);
   if (target.id === 'pdf-print') void download(false);
+  if (target.id === 'pdf-send') void send();
   if (target.id === 'print') window.print();
   if (target.id === 'template-save') save(JSON.stringify(templateNow(true), null, 1), baseName() + ' - template.json', 'application/json');
   if (target.id === 'template-anyway' && pendingTemplate) { useTemplate(pendingTemplate); pendingTemplate = null; remember(); remembered = true; note = 'The template’s blanks are in place. Check they sit where they should: it was made for a different file.'; render(); }
   if (target.id === 'refind' && form) { store.drop('template:' + form.hash); const { name, bytes } = form; void openForm(new File([bytes], name, { type: form.pdf ? 'application/pdf' : 'image/png' })); }
   if (target.id === 'csv-blank') blankCsv();
   if (target.id === 'merge-go') void makeMerge();
-  if (target.id === 'hand-use') { const text = hand.lines.map(line => line.text.trim()).filter(Boolean).join('\n'); answers = (answers.trim() ? answers.trim() + '\n' : '') + text; hand = null; note = ''; render(); }
+  if (target.id === 'hand-use') {
+    const read = numberedLines(hand.lines.map(line => line.text.trim()).filter(Boolean).join('\n'), blanks.length);
+    answers = (answers.trim() ? answers.trim() + '\n' : '') + read.text; hand = null;
+    note = read.numbered ? read.numbered + ' lines start with a blank’s number, so each went to that blank. ' + unplaced(read.unnumbered) + 'Check them on the form.' : ''; render();
+  }
   if (target.id === 'hand-drop') { hand = null; note = ''; render(); }
   if (target.id === 'save-details') {
     profile = Object.fromEntries([...DETAILS.map(([key]) => key), 'dateStyle'].map(key => [key, app.querySelector('[name=detail-' + key + ']')?.value.trim() || '']).filter(([, value]) => value));
@@ -458,6 +506,33 @@ app.addEventListener('click', event => {
   if (target.id === 'forget-details') { profile = {}; store.drop('profile'); note = 'Your details are forgotten on this device.'; render(); }
   if (target.id === 'forget-signature') { savedSignature = null; store.drop('signature'); render(); }
 });
+// Quicker ways in on a computer: drop a form (or a template) anywhere on the page, paste a screenshot of one, and
+// ⌘S / Ctrl+S for the editable PDF.
+function takeFile(file) {
+  if (busy) return;
+  if (/\.json$/i.test(file.name) || file.type === 'application/json') void openTemplateFile(file);
+  else if (isPdf(file) || /^image\//.test(file.type)) void openForm(file);
+  else { note = '“' + file.name + '” is not something this opens: use a photo, a scan or a PDF of the form, or a template.'; render(); }
+}
+const carriesFiles = event => [...(event.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragover', event => { if (!carriesFiles(event)) return; event.preventDefault(); document.body.classList.add('dropping'); });
+document.addEventListener('dragleave', event => { if (!event.relatedTarget) document.body.classList.remove('dropping'); });
+document.addEventListener('drop', event => {
+  document.body.classList.remove('dropping');
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  event.preventDefault(); takeFile(file);
+});
+document.addEventListener('paste', event => {
+  const file = [...(event.clipboardData?.files || [])].find(item => /^image\//.test(item.type) || isPdf(item));
+  if (!file || busy) return;
+  event.preventDefault();
+  void openForm(file.name && file.name !== 'image.png' ? file : new File([file], 'pasted form.png', { type: file.type }));
+});
+document.addEventListener('keydown', event => {
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' && form && !busy) { event.preventDefault(); void download(true); }
+});
+
 // Adding a blank: drag across the place to write, on the page itself.
 let drag = null;
 app.addEventListener('pointerdown', event => {

@@ -37,6 +37,17 @@ It is also a library and a command-line tool, so other programs can fill forms w
   the date the quick one read right. Your photo never leaves the device; the download does tell Hugging Face your
   address, as any download does.
 - **Printed answers.** A photo of a typed or printed page is read with the same text reader that labels the blanks.
+- **Answers on paper, by number.** Look at the numbered form, write each answer on paper after its blank's number
+  ("3 Jane Roe", "7. ICU", "#9 yes"), in any order, and photograph the paper (Read handwriting, or Read a printed page).
+  When most lines start with a number the form has, each goes to that blank. A line whose number could not be read is
+  left out and named, never put in order (where it would cover another blank's answer). On the synthetic numbered page
+  (handwriting-style fonts) four of five numbers were read; "9 x" came back as "qx". Write a word after the number
+  ("9 yes"), not a lone mark.
+- **Send it.** Where the device has a share sheet for files (iPhone, iPad, Android, Safari on a Mac), "Send…" hands
+  the filled, editable PDF to Mail, Messages or anything else. Elsewhere, download it and attach it.
+- **On a computer.** Drop a form anywhere on the page, or paste a screenshot of one; the cursor is then in the answers
+  box, which sits beside the form on a wide screen. ⌘S / Ctrl+S downloads the editable PDF.
+- **Radio buttons** in a PDF get a button over each of the form's own, so the words beside them stay readable.
 
 Nothing is put on the form without being shown first: every answer sits in its blank on the page and can be changed
 there. What a PDF field cannot take (a choice it does not offer, more characters than it allows) is listed, not

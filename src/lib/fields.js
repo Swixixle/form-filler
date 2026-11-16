@@ -25,9 +25,9 @@ export async function readFields(bytes, { scale = 1 } = {}) {
     const kind = field instanceof PDFTextField ? 'box' : field instanceof PDFCheckBox ? 'check'
       : field instanceof PDFRadioGroup || field instanceof PDFDropdown || field instanceof PDFOptionList ? 'choice' : field instanceof PDFSignature ? 'sign' : null;
     if (!kind) continue;
-    const places = field.acroField.getWidgets().map(widget => {
+    const places = field.acroField.getWidgets().map((widget, index) => {
       const ref = widget.P()?.toString(), page = ref && pageOf.has(ref) ? pageOf.get(ref) : pages.findIndex(item => item.node.Annots()?.asArray().some(annot => annot === widget.dict || doc.context.lookup(annot) === widget.dict));
-      return { page, rect: widget.getRectangle() };
+      return { page, rect: widget.getRectangle(), index };
     }).filter(place => place.page >= 0 && place.rect.width > 0 && place.rect.height > 0).sort((a, b) => a.page - b.page || b.rect.y - a.rect.y);
     if (!places.length) continue;
     const { page } = places[0], pdfPage = pages[page];
@@ -41,6 +41,10 @@ export async function readFields(bytes, { scale = 1 } = {}) {
       x0: (rect.x - view.x) * scale, x1: (rect.x + rect.width - view.x) * scale, y0: (top - rect.y - rect.height) * scale, y1: (top - rect.y) * scale };
     if (kind === 'box') { blank.multiline = field.isMultiline(); const max = field.getMaxLength(); if (max) blank.maxLength = max; }
     if (kind === 'choice') { blank.options = field.getOptions(); blank.choice = field instanceof PDFRadioGroup ? 'radio' : field instanceof PDFDropdown ? 'dropdown' : 'list'; }
+    // A radio group's buttons, each with the option it stands for (pdf-lib lists a group's options in the order of its
+    // buttons), so a page can show a button over each one instead of one box over them all and their printed words.
+    if (blank.choice === 'radio' && blank.options.length === field.acroField.getWidgets().length) blank.spots = same.map(place => ({ option: blank.options[place.index],
+      x0: (place.rect.x - view.x) * scale, x1: (place.rect.x + place.rect.width - view.x) * scale, y0: (top - place.rect.y - place.rect.height) * scale, y1: (top - place.rect.y) * scale }));
     if (field.isReadOnly()) continue;
     result.blanks.push(blank);
   }

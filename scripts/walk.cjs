@@ -150,17 +150,24 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   await step('a PDF with its own fields: those are the blanks, plus the drawn signature line; the same fields are filled', async () => {
     await openForm('fillable.pdf', 'fillable.pdf');
     assert.match(await summary(), /9 blanks found · 8 are the PDF’s own fields/);
-    assert.equal(await page.locator('select[data-blank]').count(), 2, 'the drop-down and the radio group are choices');
+    assert.equal(await page.locator('select[data-blank]').count(), 1, 'the drop-down is a choice box');
+    assert.deepEqual(await page.$$eval('input[type=radio][data-blank]', buttons => buttons.map(button => button.value)), ['Day', 'Night'], 'the radio group is a button over each of its own buttons');
     await typeAnswers('jane@example.org. 555-0100. emer. night. x. Visiting the unit for training');
     const editable = await save('#pdf-edit', 'fillable-filled.pdf'), fields = Object.fromEntries(await fieldsOf(editable));
     assert.deepEqual(Object.keys(fields).sort(), ['blank-9', 'email', 'escort', 'full_name', 'phone', 'reason', 'shift', 'unit', 'visit_date'], 'its own 8 fields, one added for the signature line');
     assert.equal(fields.full_name, 'Jane Roe'); assert.equal(fields.visit_date, today); assert.equal(fields.email, 'jane@example.org');
     assert.equal(await page.locator('select[data-blank]').first().inputValue(), 'Emergency', 'the page shows the choice "emer" picks');
+    assert.equal(await page.locator('input[type=radio][value=Night]').isChecked(), true, 'the page shows the button "night" picks');
     assert.equal(fields.unit, 'Emergency'); assert.equal(fields.shift, 'Night'); assert.equal(fields.escort, true); assert.equal(fields.reason, 'Visiting the unit for training');
     const printable = await save('#pdf-print', 'fillable-print.pdf'), text = pdfText(printable);
     assert.equal((await fieldsOf(printable)).length, 0);
     for (const word of ['Jane Roe', 'jane@example.org', 'Emergency', 'Visiting the unit']) assert.ok(text.includes(word), word + ' in the print-ready PDF');
     await shot('form-5-fillable');
+  });
+  await step('a radio button tapped on the page is the answer', async () => {
+    await page.locator('input[type=radio][value=Day]').check();
+    const fields = Object.fromEntries(await fieldsOf(await save('#pdf-edit', 'fillable-day.pdf')));
+    assert.equal(fields.shift, 'Day');
   });
   await step('what a PDF field cannot take is said, not dropped: a choice it does not offer', async () => {
     await typeAnswers('jane@example.org. 555-0100. Pharmacy');
@@ -246,6 +253,54 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.locator('[data-hand]').nth(3).fill('Ventilator VNT 2219');
     await page.click('#hand-use');
     assert.match(await page.inputValue('#answers'), /Ventilator VNT 2219\nReturn by Friday$/);
+  });
+  if (handwriting) await step('paper answers with blank numbers in front (synthetic): each read line goes to its numbered blank; an unreadable number is set aside and named', async () => {
+    await page.uncheck('#use-details'); await typeAnswers('');
+    await page.setInputFiles('#hand-photo', path.join(fixtures, 'handwritten-numbered.png'));
+    await page.waitForFunction(() => !document.querySelector('.busy') && document.querySelectorAll('[data-hand]').length && [...document.querySelectorAll('[data-hand]')].every(input => !input.placeholder), null, { timeout: 300000 });
+    console.log('        read: ' + JSON.stringify(await page.$$eval('[data-hand]', inputs => inputs.map(input => input.value))));
+    await page.click('#hand-use');
+    const now = await values();
+    assert.equal(now[2], 'Jane Roe'); assert.equal(now[6], 'Respiratory Care'); assert.equal(now[1], 'Ventilator');
+    console.log('        note: ' + await page.locator('.note').first().innerText());
+    await page.locator('.sheet').first().scrollIntoViewIfNeeded(); await shot('form-9-numbered-paper');
+  });
+  await step('on a computer: a form dropped on the page opens, the answers box is ready to type in, and it sits beside the form', async () => {
+    await context.close();
+    context = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+    context.on('request', request => { const url = request.url(); if (!url.startsWith(origin) && !/^(data|blob):/.test(url)) outside.push(url); });
+    page = await context.newPage();
+    page.on('pageerror', error => problems.push(error.message));
+    await page.goto(origin);
+    assert.ok(await page.locator('.desk').isVisible(), 'the page says a form can be dropped or pasted');
+    const bytes = [...fs.readFileSync(path.join(fixtures, 'fillable.pdf'))];
+    await page.evaluate(bytes => {
+      const data = new DataTransfer(); data.items.add(new File([new Uint8Array(bytes)], 'fillable.pdf', { type: 'application/pdf' }));
+      document.body.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+      document.body.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+    }, bytes);
+    await page.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes('fillable.pdf') && document.querySelector('.sheet'), null, { timeout: 120000 });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'answers', 'the answers box has the cursor');
+    assert.equal(await page.evaluate(() => document.body.classList.contains('dropping')), false);
+    const answersBox = await page.locator('.answers-panel').boundingBox(), sheet = await page.locator('.sheet').first().boundingBox();
+    assert.ok(answersBox.x + answersBox.width <= sheet.x && Math.abs(answersBox.y - sheet.y) < 200, 'side by side: ' + JSON.stringify([answersBox, sheet]));
+    await shot('form-8-computer');
+  });
+  await step('on a computer: ⌘S / Ctrl+S downloads the editable PDF', async () => {
+    await page.keyboard.type('Jane Roe. jane@example.org. 555-0100');
+    const [download] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('ControlOrMeta+s')]);
+    const file = path.join(scratch, 'keyed.pdf'); await download.saveAs(file);
+    assert.equal(Object.fromEntries(await fieldsOf(file)).email, 'jane@example.org');
+  });
+  await step('on a computer: a pasted screenshot of a form opens as the form', async () => {
+    const bytes = [...fs.readFileSync(path.join(fixtures, 'form.png'))];
+    await page.locator('.top h1').click();
+    await page.evaluate(bytes => {
+      const data = new DataTransfer(); data.items.add(new File([new Uint8Array(bytes)], 'image.png', { type: 'image/png' }));
+      document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    }, bytes);
+    await page.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes('pasted form.png'), null, { timeout: 120000 });
+    assert.match(await summary(), /13 blanks/);
   });
   await step('nothing was sent anywhere' + (handwriting ? ' (only the handwriting model fetched from Hugging Face; no code CDN)' : ''), async () => {
     assert.deepEqual(outside.filter(url => !(handwriting && HF.test(url))), []);

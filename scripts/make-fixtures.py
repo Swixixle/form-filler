@@ -97,3 +97,18 @@ page = page.filter(ImageFilter.GaussianBlur(0.8)); px = page.load()
 for y in range(page.height):
     for x in range(page.width): px[x, y] = max(0, min(255, px[x, y] - int(35 * y / page.height) + random.randint(-8, 8)))
 page.save(os.path.join(here, 'handwritten.png')); print('wrote handwritten.png')
+
+# The same kind of page, written the quick way: each answer after the number of its blank, out of order.
+NUMBERED = ['3 Jane Roe', '1 11/13/2026', '7 Respiratory Care', '2 Ventilator', '9 x']
+page = Image.new('L', (1400, 1100), 250); d = ImageDraw.Draw(page); random.seed(5)
+for y in range(150, 1100, 150): d.line((0, y, 1400, y), fill=175, width=2)
+for row, text in enumerate(NUMBERED):
+    x, font = 190, HAND[row % 2]
+    for word in text.split(' '):
+        w = int(d.textlength(word, font=font)) + 30
+        tile = Image.new('L', (w, 130), 0); ImageDraw.Draw(tile).text((10, 10), word, font=font, fill=255)
+        tile = tile.rotate(random.uniform(-3, 3), resample=Image.BICUBIC)
+        page.paste(Image.new('L', tile.size, 40), (x, 150 * (row + 1) - 112 + random.randint(-5, 5)), tile)
+        x += w - 10 + random.randint(0, 12)
+page.filter(ImageFilter.GaussianBlur(0.8)).save(os.path.join(here, 'handwritten-numbered.png')); print('wrote handwritten-numbered.png')
+

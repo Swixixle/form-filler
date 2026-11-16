@@ -53,3 +53,19 @@ export function placeAnswers(blanks, text, { skip } = {}) {
   }
   return { values, extra };
 }
+
+// Answers written on paper with the blank's number in front ("4 Jane Roe", "4. Jane Roe", "#4 - Jane Roe"), then read
+// from a photo: each such line becomes "4) Jane Roe", which the rules above put in blank 4. It is done only when most
+// lines start that way (at least two, and at least 60% of them), and only for numbers the form has, so an answer that
+// starts with a number ("2 tablets", "555-0100") is not taken for a blank number on a page written in order.
+const NUMBERED_LINE = /^\s*(?:no\.?\s*|#\s*)?(\d{1,3})\s*(?:[.):\-–—]\s*|\s+)(\S.*)$/i;
+export function numberedLines(text, count) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n'), filled = lines.filter(line => line.trim());
+  const fits = line => { const match = line.match(NUMBERED_LINE); return match && Number(match[1]) >= 1 && Number(match[1]) <= count ? match : null; };
+  const hits = filled.filter(fits).length;
+  if (hits < 2 || hits < 0.6 * filled.length) return { text: lines.join('\n'), numbered: 0, unnumbered: [] };
+  // A line whose number could not be read is left out, not placed in order (it would land on whatever blank follows
+  // the line before it), and handed back so the page can say which ones need placing by hand.
+  const unnumbered = filled.filter(line => !fits(line)).map(line => line.trim());
+  return { text: lines.filter(line => !line.trim() || fits(line)).map(line => { const match = fits(line); return match ? match[1] + ') ' + match[2].trim() : line; }).join('\n'), numbered: hits, unnumbered };
+}
