@@ -1,6 +1,6 @@
 {
   "name": "form-filler",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Fill hard forms easily: blanks found from the page or the PDF's own fields, loose answers placed in order, your details and today's date filled, templates, mail merge, handwriting read on the device.",
   "type": "module",

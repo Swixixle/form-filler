@@ -320,7 +320,8 @@ function render() {
       form.pages.map((page, index) => pageMarkup(page, index, finals, fixed)).join('') +
       '<div class="tools"><button type="button" id="pdf-edit" class="primary" title="Also ⌘S / Ctrl+S">Download PDF you can still edit</button>' + (canShareFiles ? '<button type="button" id="pdf-send" class="primary">Send… (e-mail, Messages)</button>' : '') + '<button type="button" id="pdf-print" class="secondary">Download print-ready PDF</button><button type="button" id="print" class="secondary">Print</button></div>' +
       '<dl class="prints"><dt>Form</dt><dd>' + form.hash + '</dd><dt>Answers</dt><dd id="answers-print">…</dd>' + Object.entries(prints).map(([name, value]) => '<dt>' + h(name) + '</dt><dd>' + value + '</dd>').join('') + '</dl></section></div>' : '') +
-    mergePanel() + detailsPanel() + '</main>';
+    mergePanel() + detailsPanel() + '</main>' +
+    '<footer class="version">Form Filler ' + __APP_VERSION__ + (__APP_COMMIT__ ? ' · ' + __APP_COMMIT__ : '') + '</footer>';
   void sha256(answers).then(print => { const slot = document.getElementById('answers-print'); if (slot) slot.textContent = print; });
 }
 
@@ -564,4 +565,18 @@ if (fromLink) answers = fromLink;
 render();
 
 // Offline after the first visit: a service worker keeps the page's own files (built ones only).
-if ('serviceWorker' in navigator && import.meta.env.PROD && location.protocol !== 'file:') navigator.serviceWorker.register(asset('sw.js')).catch(() => { /* works online without it */ });
+// When a newer version has been published, the old one must not linger: the page looks for it each time it is opened
+// or brought back to the front, and once the new version is in place the page reloads into it, unless a form is open
+// (then it says so and waits, so nothing typed is lost).
+if ('serviceWorker' in navigator && import.meta.env.PROD && location.protocol !== 'file:') {
+  const hadOne = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.register(asset('sw.js')).then(registration => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') registration.update().catch(() => {}); });
+  }).catch(() => { /* works online without it */ });
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadOne || reloading) return;
+    if (!form && !answers.trim()) { reloading = true; location.reload(); return; }
+    note = 'A newer version of Form Filler is ready. It opens the next time you open the page (or reload it now, after you download this form).'; render();
+  });
+}

@@ -2,6 +2,11 @@ import { defineConfig, defaultClientConditions } from 'vite';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { execSync } from 'node:child_process';
+
+// Which version this is, shown at the foot of the page, so an old copy on a phone is easy to tell from the new one.
+const VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version;
+const COMMIT = (process.env.GITHUB_SHA || (() => { try { return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString(); } catch { return ''; } })()).trim().slice(0, 7);
 
 // ONNX Runtime's "extern wasm" build: it does not pull its own 27 MB WebAssembly into the bundle; the worker points
 // it at the copy in ort/ instead (scripts/prepare-assets.mjs).
@@ -31,5 +36,6 @@ export default defineConfig({
   server: { host: '127.0.0.1' },
   resolve: { conditions },
   worker: { format: 'es' },
+  define: { __APP_VERSION__: JSON.stringify(VERSION), __APP_COMMIT__: JSON.stringify(COMMIT) },
   plugins: [serviceWorker()],
 });

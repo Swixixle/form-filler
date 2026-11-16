@@ -6,7 +6,7 @@ uploaded. It installs like an app (Add to Home Screen) and works offline after t
 
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
-**Open it:** <https://swixixle.github.io/form-filler/>
+**Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; what changed in each is in [CHANGELOG.md](CHANGELOG.md).
 
 ## How it works: a form from an e-mail, filled from a sheet of paper
 

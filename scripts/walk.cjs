@@ -64,6 +64,8 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.evaluate(() => navigator.serviceWorker.ready);
     const kept = await page.evaluate(async () => { const keys = await caches.keys(); const cache = await caches.open(keys.find(key => key.startsWith('form-filler-'))); return (await cache.keys()).length; });
     assert.ok(kept >= 15, kept + ' files kept');
+    const version = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8')).version;
+    assert.match(await page.locator('footer.version').innerText(), new RegExp('^Form Filler ' + version.replace(/\./g, '\\.') + '( · [0-9a-f]{7})?$'), 'the page says which version it is');
   });
   await step('a crooked phone photo of a form: straightened, and its 13 blanks found', async () => {
     await openForm('form-photo.png', 'blanks found');
