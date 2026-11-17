@@ -19,7 +19,7 @@ That points git at the hooks in `.githooks/`. From then on `git commit` runs the
 | | Where the rule lives | Checked on your Mac | Checked on GitHub |
 | --- | --- | --- | --- |
 | **Shapes**: a Social Security number that could be real; any nine-digit number that could be one, or a routing number; a value written after "account number", "licence number", "date of birth"; an e-mail address that is not an invented one; a home-folder path with an account name in it | `scripts/never-list.mjs` (patterns only, no real value) | Yes | Yes |
-| **Your own values**: your name, birthdate, addresses, licence and account numbers, however they are spaced, cased or punctuated | `never-list/local.txt`, on your Mac only | Yes | No (GitHub never has them) |
+| **Your own values**: your name, birthdate, addresses, licence and account numbers, however they are spaced, cased or punctuated, even inside a longer word | Nowhere as themselves. `never-list/local.txt` holds a keyed fingerprint of each; the key is in your Mac's Keychain | Yes | No (GitHub has neither) |
 | **Files that are not text**: a picture, PDF, video or archive must be listed in `invented-files.txt`. A PDF's text is also read and checked | `never-list/invented-files.txt` | Yes | Yes |
 | **Files that belong elsewhere**: `local.txt` itself, encrypted vault files (`.age`), anything from the archive or backup folders | `scripts/never-list.mjs` | Yes | Yes |
 | **Commit messages** | the same rules | Yes | Yes |
@@ -29,8 +29,13 @@ only its last four characters.
 
 ## Your own values
 
-They are kept in `never-list/local.txt`. Git ignores that file, the gate refuses to commit it, and only you can read
-it. Nothing else reads it.
+**They are not kept anywhere.** When you add a value, the gate keeps only a keyed fingerprint of it in
+`never-list/local.txt`: HMAC-SHA256 of the value's letters and digits. The key is one item in your Mac's login Keychain
+(`form-filler.never-list`). It is not in the repository and not in that file, so the file can be read, copied, backed
+up or leaked without giving a value away. Git ignores the file, and the gate refuses to commit it all the same.
+
+To check a file, the gate reduces its text to letters and digits the same way and fingerprints every stretch of it as
+long as one of your values. That is why a value is found however it is spaced or punctuated, and inside a longer word.
 
 Add a value. You are asked what kind it is and then to type it twice; what you type is not shown:
 
@@ -38,14 +43,28 @@ Add a value. You are asked what kind it is and then to type it twice; what you t
 npm run never-list -- add
 ```
 
-See what the list holds, masked:
+See how many values of each kind are on the list (the values themselves cannot be shown; they are not there):
 
 ```bash
 npm run never-list -- list
 ```
 
-You do not need to put your Social Security number or bank numbers in the file: their shapes are already stopped
-wherever they appear. The file is for what has no shape: a name, an address, a birthdate, a licence number.
+Take a value off again (typed, not shown):
+
+```bash
+npm run never-list -- remove
+```
+
+What follows from keeping it this way:
+
+- **A new Mac, or a deleted Keychain item, means adding your values again.** The fingerprints are useless without the
+  key, to you as much as to anyone.
+- **If the key cannot be read, the gate refuses the commit.** It never skips your values.
+- **The key is as safe as your login.** Anything running as you on your unlocked Mac can ask the Keychain for it the
+  way the gate does. With the key and the file it could test guesses against the fingerprints; it still could not
+  read a value out of them.
+- You do not need to add your Social Security number or bank numbers: their shapes are already stopped wherever they
+  appear. The list is for what has no shape: a name, an address, a birthdate, a licence number.
 
 ## Invented material
 
@@ -71,8 +90,10 @@ npm run never-list -- --all --history
 
 ## What it cannot do
 
-- **It does not see who made a commit.** The author name and e-mail address that git stamps on each commit are not
-  file contents. They are set with `git config user.name` and `git config user.email`.
+- **Who made a commit is checked only on your Mac, and only against your own values.** The author and committer
+  that git stamps on a commit (`git config user.name` and `user.email`) are not file contents. Before a commit is made
+  the gate refuses one whose author or committer line holds a value on your list. It does not check commits already
+  made, and GitHub does not check this at all.
 - **It does not read pictures.** A photo of a real form cannot be recognised, which is why every picture has to be
   listed by a person.
 - **It can be skipped** with `git commit --no-verify`. The check on GitHub still runs, but GitHub only knows the
