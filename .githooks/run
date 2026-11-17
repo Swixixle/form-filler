@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs the never-list gate (scripts/never-list.mjs) for the hooks beside this file.
+# If Node cannot be found the commit is refused: a gate that cannot run must not pass.
+root="$(git rev-parse --show-toplevel)" || exit 2
+node="$(command -v node 2>/dev/null)"
+if [ -z "$node" ]; then
+  for candidate in /opt/homebrew/bin/node /usr/local/bin/node "$HOME"/.nvm/versions/node/*/bin/node; do
+    [ -x "$candidate" ] && node="$candidate"
+  done
+fi
+if [ -z "$node" ]; then
+  echo "Never-list gate: Node was not found, so the check could not run and nothing was committed." >&2
+  exit 2
+fi
+exec "$node" "$root/scripts/never-list.mjs" "$@"

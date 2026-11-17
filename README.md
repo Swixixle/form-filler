@@ -156,6 +156,13 @@ form-filler fill ... --details me.json --today 2026-11-13 --print --strict
 - **Fonts**: answers are set in Helvetica; letters it cannot draw are swapped for plain ones.
 - **Many copies** are print-ready only (each copy's fields would clash with the next).
 
+## Privacy
+
+Nothing you put into Form Filler is sent anywhere, and nothing personal belongs in this repository. A gate checks
+every commit for personal information (a name, a birthdate, an address, Social Security, licence and account numbers,
+any picture or PDF not listed as invented) before the commit is made, and again on GitHub. After cloning, turn it on
+once with `npm run hooks`. How it works: [never-list/README.md](never-list/README.md).
+
 ## Run it
 
 ```sh

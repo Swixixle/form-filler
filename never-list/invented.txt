@@ -1,0 +1,4 @@
+# Invented values that have the shape of something on the never-list (a made-up account number in a test, say).
+# One to a line; a note may follow after " # ". A value listed here is let through by the never-list gate.
+# Only invented values belong here. For a Social Security number use one that was never issued, such as
+# 987-65-4321: the gate lets those through without listing them.

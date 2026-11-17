@@ -1,0 +1,3 @@
+#!/bin/sh
+# The commit message is checked too. See never-list/README.md.
+exec "$(dirname "$0")/run" --message "$1"

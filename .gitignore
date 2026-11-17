@@ -5,3 +5,6 @@ public/pdf/
 .DS_Store
 public/ort/
 public/licenses/
+
+# The never-list: your own values stay on this computer (see never-list/README.md)
+never-list/local.txt

@@ -19,7 +19,9 @@
     "build": "npm run prepare-assets && vite build",
     "test": "node --test tests/*.test.js",
     "walk": "node scripts/walk.cjs dist",
-    "check:handwriting": "node scripts/check-handwriting.mjs"
+    "check:handwriting": "node scripts/check-handwriting.mjs",
+    "never-list": "node scripts/never-list.mjs",
+    "hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "pdf-lib": "1.17.1"

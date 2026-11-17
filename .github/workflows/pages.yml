@@ -17,12 +17,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # every commit, so the never-list gate can check each one
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # The never-list gate (never-list/README.md): no personal information in any file, commit or commit message.
+      - run: node scripts/never-list.mjs --all --history
       - run: npm test
       - run: npm run build
       - uses: actions/configure-pages@v5
