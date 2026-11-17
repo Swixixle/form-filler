@@ -197,6 +197,89 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
   return order(blanks.filter(blank => !header(blank)), unit);
 }
 
+// Round option buttons drawn on a page ("( ) Yes   ( ) No"), where only one of a set may be chosen. A button is a ring
+// of ink: round, hollow, thin, a piece of ink by itself. Three things keep letters out, because a capital O is a ring
+// too: a button is at least about a third of a line high (the "o" of small print and of bullets is smaller), it stands
+// apart from what is beside it (a letter has its neighbours close by), and it never comes alone: there is another the
+// same size on its line, or straight above or below. Each such set comes back as one blank, kind 'choice', with a
+// `spots` entry for every button, so that choosing one un-chooses the others. A lone ring is left alone.
+export function findOptions(gray, width, height, { textHeight, ink: given } = {}) {
+  const ink = given || threshold(gray, width, height), unit = textHeight || Math.max(10, Math.round(height / 45));
+  const least = Math.max(12, Math.round(unit * 0.36)), most = Math.round(unit * 1.3), dark = (x, y) => x >= 0 && y >= 0 && x < width && y < height && ink[y * width + x] === 1;
+  // Each piece of ink (pixels that touch, corners included), followed with a stack. Pieces bigger than a button are
+  // walked to the end, so they are not started again, but not kept.
+  const seen = new Uint8Array(width * height), stack = new Int32Array(width * height), rings = [];
+  for (let start = 0; start < ink.length; start++) {
+    if (!ink[start] || seen[start]) continue;
+    let top = 0, x0 = width, x1 = -1, y0 = height, y1 = -1, kept = [];
+    stack[top++] = start; seen[start] = 1;
+    while (top) {
+      const at = stack[--top], x = at % width, y = (at - x) / width;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (kept && (x1 - x0 > most || y1 - y0 > most)) kept = null; else if (kept) kept.push(at);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, next = ny * width + nx;
+        if (nx >= 0 && ny >= 0 && nx < width && ny < height && ink[next] && !seen[next]) { seen[next] = 1; stack[top++] = next; }
+      }
+    }
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (!kept || w < least || h < least || Math.abs(w - h) > Math.max(2, Math.max(w, h) * 0.15)) continue;
+    // A ring: its ink lies on a circle about its middle, all the way round, with nothing nearer the middle.
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, radius = (w + h) / 4, sectors = new Uint8Array(24);
+    let stray = 0, inner = 0;
+    for (const at of kept) {
+      const x = at % width, y = (at - x) / width, far = Math.hypot(x - cx, y - cy);
+      if (far > radius + 1.5) stray++; else if (far < radius * 0.5) inner++; else sectors[Math.floor((Math.atan2(y - cy, x - cx) + Math.PI) / (2 * Math.PI) * 24) % 24] = 1;
+    }
+    const thick = kept.length / (2 * Math.PI * radius * 0.9);
+    if (inner || stray > kept.length * 0.02 || sectors.reduce((sum, on) => sum + on, 0) < 23 || thick > radius * 0.34) continue;
+    // Hollow: nothing else inside it either (a button already chosen has a dot, and is not a blank).
+    let filled = 0;
+    for (let y = Math.ceil(cy - radius * 0.45); y <= cy + radius * 0.45; y++) for (let x = Math.ceil(cx - radius * 0.45); x <= cx + radius * 0.45; x++) if (dark(x, y)) filled++;
+    if (filled) continue;
+    // Apart: clear paper beside it, a third of its width on each side, across the middle of its height.
+    const gap = Math.max(3, Math.round(w * 0.3));
+    let crowded = false;
+    for (let y = Math.round(cy - h * 0.3); y <= cy + h * 0.3 && !crowded; y++) for (let k = 1; k <= gap && !crowded; k++) crowded = dark(x0 - k, y) || dark(x1 + k, y);
+    if (!crowded) rings.push({ x0, y0, x1: x1 + 1, y1: y1 + 1, cx, cy, size: (w + h) / 2 });
+  }
+  // Sets: rings of one size on one line, or one under another. A line that holds two questions is cut where the space
+  // between two buttons is much wider than the narrowest space on that line.
+  const alike = (a, b) => Math.abs(a.size - b.size) <= Math.max(2, Math.max(a.size, b.size) * 0.18), sets = [], used = new Set();
+  const chain = (list, along, across, reach) => {
+    const lines = [];
+    for (const ring of [...list].sort((a, b) => a[across] - b[across])) { const line = lines.find(item => Math.abs(item[0][across] - ring[across]) <= ring.size * 0.35 && alike(item[0], ring)); if (line) line.push(ring); else lines.push([ring]); }
+    for (const line of lines) {
+      line.sort((a, b) => a[along] - b[along]);
+      const gaps = line.slice(1).map((ring, index) => ring[along] - line[index][along]), narrow = Math.min(...gaps);
+      let set = [line[0]];
+      line.slice(1).forEach((ring, index) => { if (gaps[index] > narrow * 1.8 || gaps[index] > reach(ring)) { if (set.length > 1) sets.push(set); set = []; } set.push(ring); });
+      if (set.length > 1) sets.push(set);
+    }
+  };
+  chain(rings, 'cx', 'cy', () => Infinity);
+  for (const set of sets) for (const ring of set) used.add(ring);
+  chain(rings.filter(ring => !used.has(ring)), 'cy', 'cx', ring => ring.size * 3.5);
+  const box = ring => ({ x0: ring.x0, y0: ring.y0, x1: ring.x1, y1: ring.y1 });
+  return order(sets.map(set => ({ kind: 'choice', choice: 'radio', x0: Math.min(...set.map(ring => ring.x0)), y0: Math.min(...set.map(ring => ring.y0)), x1: Math.max(...set.map(ring => ring.x1)), y1: Math.max(...set.map(ring => ring.y1)), spots: set.map(box) })), unit);
+}
+// What each button of a set is called: the words printed just after it, as far as the next button or a wide space.
+// `words` are the text reader's [{ text, bbox }]. A button with no words after it is called by its number.
+export function nameOptions(set, words, unit = 20) {
+  const spots = set.spots.map((spot, index) => {
+    const tall = spot.y1 - spot.y0, onLine = word => Math.min(word.bbox.y1, spot.y1 + tall * 0.3) - Math.max(word.bbox.y0, spot.y0 - tall * 0.3) >= 0.4 * (word.bbox.y1 - word.bbox.y0);
+    const stop = Math.min(Infinity, ...set.spots.filter(other => other !== spot && other.x0 > spot.x1 && other.y0 < spot.y1 && other.y1 > spot.y0).map(other => other.x0));
+    const phrase = [];
+    for (const word of words.filter(word => onLine(word) && word.bbox.x0 >= spot.x1 - 2 && word.bbox.x1 <= stop + 2).sort((a, b) => a.bbox.x0 - b.bbox.x0)) {
+      if (word.bbox.x0 - (phrase.length ? phrase[phrase.length - 1].bbox.x1 : spot.x1) > unit * (phrase.length ? 0.9 : 1.5) || phrase.length === 4) break;
+      phrase.push(word);
+    }
+    return { ...spot, option: phrase.map(word => word.text).join(' ').replace(/[,;:.]+$/, '') || String(index + 1) };
+  });
+  spots.forEach((spot, index) => { if (spots.findIndex(other => other.option === spot.option) !== index) spot.option += ' (' + (index + 1) + ')'; });
+  return { ...set, spots, options: spots.map(spot => spot.option) };
+}
+
 // Reading order: rows first (a blank belongs to a row if its middle is within half a line of the row's), then left to right.
 export function order(blanks, unit = 20) {
   const sorted = [...blanks].sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2), rows = [];

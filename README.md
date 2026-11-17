@@ -150,7 +150,8 @@ form-filler fill ... --details me.json --today 2026-11-13 --print --strict
   of characters); the larger one got the date wrong (11.6%). A person's own hand will do worse, joined-up writing worst. Lines must be
   written apart from each other; two lines that touch are split at their thinnest row, which can cut a tall letter.
 - **A photo taken at an angle** (not just turned) is straightened for rotation only, not perspective.
-- **Round option buttons drawn on a page** (not a PDF's own radio buttons) are not found: a checkbox is a square.
+- **Round option buttons drawn on a page** (not a PDF's own radio buttons, which work) are not found by the page yet.
+  The library has a rule for them (`findOptions`: each set of buttons is one choice), tested but not yet used.
 - **A locked PDF longer than 10 pages**: only the first 10 are in the filled copy, and the page says so.
 - **Dotted-line blanks and blanks with no line or box**, such as a gap after a colon: add them by hand.
 - **XFA forms** (an Adobe-only kind) cannot have their own fields read; locked PDFs are filled as pictures of their

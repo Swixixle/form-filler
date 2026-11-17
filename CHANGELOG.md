@@ -12,7 +12,10 @@
   copy. All pages are kept now, in order.
 - **What the browser kept is checked before it is used:** a saved signature must be a PNG picture, and saved details
   must be text.
-- **Privacy:** a gate stops any commit that carries personal information (`never-list/README.md`). MIT licence.
+- **Privacy:** a gate stops any commit that carries personal information (`never-list/README.md`). The owner's own
+  values are kept nowhere: the gate holds a keyed fingerprint of each, with the key in the Mac's Keychain. MIT licence.
+- **Round option buttons** drawn on a flat page: the library can find them, each set as one choice (`findOptions`,
+  `nameOptions`). The page does not use it yet.
 
 ## 2.1.0 (2026-11-16)
 

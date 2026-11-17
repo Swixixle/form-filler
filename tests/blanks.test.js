@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { findBlanks, skewOf, rotate } from '../src/lib/blanks.js';
+import { findBlanks, findOptions, nameOptions, labelFor, skewOf, rotate } from '../src/lib/blanks.js';
 import { splitAnswers, placeAnswers } from '../src/lib/answers.js';
 
 // Invented forms drawn by scripts/make-fixtures.py. Synthetic test material.
@@ -41,6 +41,43 @@ test('the same forms as WebKit draws them (Safari, an iPhone, the Mac app): no b
   assert.ok(onFillable.every(blank => blank.y0 > 200), 'the tops of the bold title\'s letters are not a line to write on: ' + JSON.stringify(onFillable[0]));
   // What is left: the four text fields' boxes, the checkbox, the big box, and the signature line (a radio button is round, not a box).
   assert.deepEqual(onFillable.map(blank => blank.kind), ['box', 'box', 'box', 'box', 'check', 'box', 'line']);
+});
+
+test('round option buttons on a flat page: every set found, one blank a set; letters, zeros and bullets are not buttons', () => {
+  // options.png is the invented round-button form drawn by scripts/make-option-fixture.mjs (poppler's picture of it);
+  // options-webkit.png is the same page as WebKit 26.6 drew it. 14 buttons in 6 sets, and beside them capital O's,
+  // zeros, a Q, "o" bullets and a bold heading, none of which is a button.
+  for (const name of ['options.png', 'options-webkit.png']) {
+    const { gray, width, height } = grayOf(name), sets = findOptions(gray, width, height);
+    assert.deepEqual(sets.map(set => set.spots.length), [2, 2, 3, 2, 2, 3], name + ': ' + JSON.stringify(sets));
+    assert.ok(sets.every(set => set.kind === 'choice' && set.choice === 'radio'), 'each set is one choice');
+    assert.ok(Math.abs(sets[3].y0 - sets[4].y0) < 4 && sets[3].x1 < sets[4].x0, name + ': two questions on one line are two sets, not one of four');
+    const under = sets[5].spots;
+    assert.ok(under.every(spot => Math.abs(spot.x0 - under[0].x0) <= 2) && under[0].y1 < under[1].y0 && under[1].y1 < under[2].y0, name + ': the last set runs down the page');
+    for (const spot of sets.flatMap(set => set.spots)) { const wide = spot.x1 - spot.x0, tall = spot.y1 - spot.y0; assert.ok(wide >= 22 && wide <= 34 && Math.abs(wide - tall) <= 2, name + ': a button is round: ' + JSON.stringify(spot)); }
+    // What the blank finder finds on the same page is what it found before: the two lines and the one square checkbox.
+    assert.deepEqual(findBlanks(gray, width, height).map(blank => blank.kind), ['line', 'check', 'line'], name);
+  }
+  // The forms that once grew phantom blanks have no option buttons at all.
+  for (const name of ['form.png', 'form-photo.png', 'form-webkit.png']) { const { gray, width, height } = grayOf(name); assert.deepEqual(findOptions(gray, width, height), [], name); }
+  // A fillable PDF's own two radio buttons, as drawn on the page, are one set of two.
+  const fillable = grayOf('fillable-webkit.png');
+  assert.deepEqual(findOptions(fillable.gray, fillable.width, fillable.height).map(set => set.spots.length), [2]);
+});
+
+test('an option button is called by the words after it, and its set by the question before it', () => {
+  const { gray, width, height } = grayOf('options.png'), sets = findOptions(gray, width, height);
+  // Words as the text reader gives them. Each button's word starts 14 pixels after it; "Wheelchair access?" sits
+  // between the two sets that share a line.
+  const word = (text, x0, y0) => ({ text, bbox: { x0, y0, x1: x0 + text.length * 14, y1: y0 + 26 } }), after = (spot, text) => word(text, spot.x1 + 14, spot.y0 + 2), line = sets[3].y0 + 2;
+  const words = [...sets[2].spots.map((spot, index) => after(spot, ['Phone', 'E-mail', 'Post'][index])), word('Parking', 200, line), word('needed?', 320, line),
+    after(sets[3].spots[0], 'Yes'), after(sets[3].spots[1], 'No'), word('Wheelchair', 834, line), word('access?', 990, line), after(sets[4].spots[0], 'Yes'), after(sets[4].spots[1], 'No')];
+  assert.deepEqual(nameOptions(sets[2], words, 49).options, ['Phone', 'E-mail', 'Post']);
+  assert.deepEqual(nameOptions(sets[3], words, 49).options, ['Yes', 'No'], 'the next question is not part of "No"');
+  assert.deepEqual(nameOptions(sets[4], words, 49).options, ['Yes', 'No']);
+  assert.deepEqual(nameOptions(sets[4], words, 49).spots.map(spot => spot.option), ['Yes', 'No'], 'each button knows its own word');
+  assert.deepEqual(nameOptions(sets[0], [], 49).options, ['1', '2'], 'with nothing read, a button is called by its number');
+  assert.equal(labelFor(sets[3], words, 49), 'Parking needed?'); assert.equal(labelFor(sets[4], words, 49), 'Wheelchair access?');
 });
 
 test('answers: periods and new lines move on, a dash or extra period leaves a blank empty, a number jumps', () => {
