@@ -193,7 +193,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     const columns = await save('#csv-blank', 'columns.csv');
     assert.equal(lib.parseCsv(fs.readFileSync(columns, 'utf8'))[0].length, 13);
     const csv = path.join(scratch, 'rows.csv');
-    fs.writeFileSync(csv, '1,#4,blank 5,Color\r\nAlex Doe,Ventilator,VNT-1001,blue\r\n"Roe, Jane",Oximeter,OX-2002,\r\nSam Poe,Nebulizer,NB-3003,red\r\n');
+    fs.writeFileSync(csv, '1,#4,blank 5,Color\r\nLee Doe,Ventilator,VNT-1001,blue\r\n"Roe, Jane",Oximeter,OX-2002,\r\nSam Poe,Nebulizer,NB-3003,red\r\n');
     await page.setInputFiles('#csv-file', csv);
     await page.waitForSelector('#merge-go');
     const listing = await page.locator('.columns').innerText();
@@ -202,7 +202,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     const merged = path.join(scratch, 'merged.pdf'); await download.saveAs(merged);
     assert.equal((await PDFDocument.load(fs.readFileSync(merged))).getPageCount(), 3);
     const text = pdfText(merged);
-    for (const word of ['Alex Doe', 'Roe, Jane', 'Sam Poe', 'VNT-1001', 'OX-2002', 'NB-3003']) assert.ok(text.includes(word), word + ' in the merged PDF');
+    for (const word of ['Lee Doe', 'Roe, Jane', 'Sam Poe', 'VNT-1001', 'OX-2002', 'NB-3003']) assert.ok(text.includes(word), word + ' in the merged PDF');
     assert.equal((await fieldsOf(merged)).length, 0, 'merged copies are print-ready');
     await shot('form-6-merge');
   });

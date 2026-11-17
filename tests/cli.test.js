@@ -50,13 +50,13 @@ test('fill --csv on a photographed form\'s template (which carries its own page 
   const blanks = findBlanks(gray, png.width, png.height).map(blank => ({ ...blank, page: 0 }));
   const template = makeTemplate({ form: { sha256: 'b'.repeat(64), name: 'form.png', type: 'image' }, pages: [{ width: png.width, height: png.height, pdfPage: null, image: 'data:image/png;base64,' + readFileSync(fixture('form.png')).toString('base64') }], blanks });
   writeFileSync(at('photo.json'), JSON.stringify(template));
-  writeFileSync(at('rows.csv'), '1,3,Shade\nAlex Doe,Pharmacy,blue\nSam Poe,Respiratory,\n');
+  writeFileSync(at('rows.csv'), '1,3,Shade\nLee Doe,Pharmacy,blue\nSam Poe,Respiratory,\n');
   const out = run('fill', '--template', at('photo.json'), '--csv', at('rows.csv'), '--out', at('merged.pdf'));
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stderr, /Columns that name no blank \(left out\): Shade/);
   assert.equal((await PDFDocument.load(readFileSync(at('merged.pdf')))).getPageCount(), 2);
   const text = pdfText(at('merged.pdf'));
-  for (const word of ['Alex Doe', 'Pharmacy', 'Sam Poe', 'Respiratory']) assert.ok(text.includes(word), word);
+  for (const word of ['Lee Doe', 'Pharmacy', 'Sam Poe', 'Respiratory']) assert.ok(text.includes(word), word);
 });
 
 test('check: a damaged template is refused with exactly what is wrong', () => {
