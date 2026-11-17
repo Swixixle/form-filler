@@ -320,6 +320,21 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
       assert.match(await other.locator('.panel .subtle').first().innerText(), /9 blanks found · 8 are the PDF’s own fields/);
     } finally { await old.close(); }
   });
+  await step('what the browser kept is checked before it is used: a saved "signature" that is not a picture never reaches the page', async () => {
+    // The browser's storage is shared by every page at the same site address, so another page could have written it.
+    const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    try {
+      await fresh.addInitScript(() => { try { localStorage.setItem('ff:signature', JSON.stringify('x" onerror="window.planted = 1" alt="')); localStorage.setItem('ff:profile', JSON.stringify({ fullName: ['not', 'text'], email: 'jane@example.org' })); localStorage.setItem('ff:detailsOpen', 'true'); } catch { /* no storage */ } });
+      const other = await fresh.newPage();
+      await other.goto(origin);
+      await other.waitForSelector('#details-panel[open]');
+      await other.waitForTimeout(400);
+      assert.equal(await other.evaluate(() => window.planted), undefined, 'nothing from storage ran as code');
+      assert.equal(await other.locator('img.saved-sign').count(), 0, 'and it is not offered as a saved signature');
+      assert.equal(await other.inputValue('[name=detail-fullName]'), '', 'a detail that is not text is dropped');
+      assert.equal(await other.inputValue('[name=detail-email]'), 'jane@example.org', 'a detail that is text is kept');
+    } finally { await fresh.close(); }
+  });
   await step('on a computer: a form dropped on the page opens, the answers box is ready to type in, and it sits beside the form', async () => {
     await context.close();
     context = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });

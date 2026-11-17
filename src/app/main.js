@@ -27,7 +27,11 @@ const store = {
 let form = null;          // { name, bytes, hash, pdf, locked, pages: [{ canvas, width, height, pdfPage, angle, scale }] }
 let blanks = [];          // [{ id, page, kind, x0, y0, x1, y1, label, field?, options? }]
 let answers = '', overrides = {}, busy = '', note = '', adding = false, prints = {}, remembered = false, problems = [];
-let useDetails = store.get('useDetails', true), profile = store.get('profile', {}), savedSignature = store.get('signature', null);
+// A saved signature is a PNG picture and nothing else. The browser's storage is shared with every other page at the
+// same site address, so what comes back from it is checked before it is used, and escaped where it is written.
+const asSignature = value => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) ? value : null;
+const asDetails = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string')) : {};
+let useDetails = store.get('useDetails', true) !== false, profile = asDetails(store.get('profile', {})), savedSignature = asSignature(store.get('signature', null));
 let merge = null;         // { name, headers, rows, columns, unmatched, shared }
 let hand = null;          // { lines: [{ img, text, done }], model }
 let pendingTemplate = null;
@@ -240,7 +244,7 @@ const signable = blank => blank.kind === 'sign' || (blank.kind !== 'check' && bl
 const blankName = (blank, number) => 'Blank ' + (number + 1) + (blank.label ? ', ' + h(blank.label) : '');
 function blankInput(blank, number, value) {
   const name = ' data-blank="' + blank.id + '" aria-label="' + blankName(blank, number) + '"';
-  if (isSignature(value)) return '<img class="signed" alt="Signature" src="' + value.signature + '"><button type="button" class="unsign" data-unsign="' + blank.id + '" aria-label="Take the signature off blank ' + (number + 1) + '">×</button>';
+  if (isSignature(value)) return '<img class="signed" alt="Signature" src="' + h(value.signature) + '"><button type="button" class="unsign" data-unsign="' + blank.id + '" aria-label="Take the signature off blank ' + (number + 1) + '">×</button>';
   if (blank.kind === 'check') return '<input type="checkbox"' + name + (value ? ' checked' : '') + '>';
   // A radio group: a button over each of the form's own buttons, so the words printed beside them stay readable.
   if (blank.kind === 'choice' && blank.spots?.length) {
@@ -272,7 +276,7 @@ function detailsPanel() {
     '<div class="details">' + DETAILS.map(([key, title]) => '<label>' + h(title) + '<input name="detail-' + key + '" value="' + h(profile[key] || '') + '" autocomplete="off"></label>').join('') +
     '<label>Dates written as<select name="detail-dateStyle">' + [['us', '11/13/2026'], ['iso', '2026-11-13'], ['day', '13/11/2026']].map(([value, title]) => '<option value="' + value + '"' + ((profile.dateStyle || 'us') === value ? ' selected' : '') + '>' + title + '</option>').join('') + '</select></label></div>' +
     '<div class="tools"><button type="button" id="save-details" class="primary">Save my details</button><button type="button" id="forget-details" class="secondary">Forget my details</button></div>' +
-    (savedSignature ? '<p class="subtle">Your saved signature: <img class="saved-sign" alt="Saved signature" src="' + savedSignature + '"> <button type="button" id="forget-signature" class="secondary">Forget it</button></p>' : '') + '</details>';
+    (savedSignature ? '<p class="subtle">Your saved signature: <img class="saved-sign" alt="Saved signature" src="' + h(savedSignature) + '"> <button type="button" id="forget-signature" class="secondary">Forget it</button></p>' : '') + '</details>';
 }
 function mergePanel() {
   if (!form) return '';
