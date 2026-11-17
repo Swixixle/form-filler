@@ -2,6 +2,7 @@
   "name": "form-filler",
   "version": "2.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Fill hard forms easily: blanks found from the page or the PDF's own fields, loose answers placed in order, your details and today's date filled, templates, mail merge, handwriting read on the device.",
   "type": "module",
   "engines": {
@@ -19,6 +20,7 @@
     "build": "npm run prepare-assets && vite build",
     "test": "node --test tests/*.test.js",
     "walk": "node scripts/walk.cjs dist",
+    "walk:webkit": "node scripts/walk.cjs dist --engine webkit",
     "check:handwriting": "node scripts/check-handwriting.mjs",
     "never-list": "node scripts/never-list.mjs",
     "hooks": "git config core.hooksPath .githooks"
@@ -32,6 +34,7 @@
     "@huggingface/transformers": "4.3.2",
     "@tesseract.js-data/eng": "1.0.0",
     "pdfjs-dist": "6.5.438",
+    "playwright": "1.63.0",
     "pngjs": "7.0.0",
     "tesseract.js": "7.0.0",
     "vite": "7.3.7"

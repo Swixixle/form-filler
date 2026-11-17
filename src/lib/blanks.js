@@ -3,7 +3,7 @@
 //
 //   1. A line to write on: a long, thin, straight horizontal line with empty space above it.
 //   2. A box, or a cell of a table: a rectangle that is empty, or empty to the right of (or below) a short label.
-//   3. A checkbox: a small closed square.
+//   3. A checkbox: a small closed square, corners and all (the ring of a letter is not one).
 //
 // The page is first made black and white. Lines are runs of dark pixels long enough that text cannot make them (letters
 // have gaps); a little gap is allowed so a scanned or photographed line still counts. Rectangles are pairs of matching
@@ -71,6 +71,41 @@ function inkExtent(ink, width, x0, y0, x1, y1) {
   return right < 0 ? null : { left, right, top, bottom };
 }
 
+// A checkbox is a square, so it has corners. In small print the ring of a letter (an O, the Q of "Qty") is drawn
+// with a flat top, a flat bottom and upright sides, and by its sides alone it passes for a box; but there is no ink in
+// its corners. Returns how many of the outline's four corners hold ink. `top` and `bottom` are the two lines.
+function corners(ink, width, height, top, bottom) {
+  const side = top.x1 - top.x0, reach = Math.max(2, Math.round(side * 0.25)), size = Math.max(2, Math.round(side * 0.12));
+  const dark = (x, y) => x >= 0 && y >= 0 && x < width && y < height && ink[y * width + x] === 1;
+  // The outer edge of a wall on one row: the ink nearest the end of the top line, followed outward as far as it goes.
+  const outer = (y, from, step) => {
+    let x = null;
+    for (let k = 0; k <= reach && x === null; k++) x = dark(from - step * k, y) ? from - step * k : dark(from + step * k, y) ? from + step * k : null;
+    if (x === null) return from;
+    for (let k = 0; k < reach && dark(x + step, y); k++) x += step;
+    return x;
+  };
+  const middle = list => list.sort((a, b) => a - b)[Math.floor(list.length / 2)], rows = [];
+  for (let y = top.y1 + Math.round((bottom.y0 - top.y1) * 0.3); y <= top.y1 + Math.round((bottom.y0 - top.y1) * 0.7); y++) rows.push(y);
+  const left = middle(rows.map(y => outer(y, top.x0, -1))), right = middle(rows.map(y => outer(y, top.x1, 1)));
+  const inked = (x0, y0) => { let count = 0; for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) if (dark(x, y)) count++; return count * 2 >= size * size; };
+  return [inked(left, top.y0), inked(right - size + 1, top.y0), inked(left, bottom.y1 - size + 1), inked(right - size + 1, bottom.y1 - size + 1)].filter(Boolean).length;
+}
+// A rule to write on is ink nearly all the way along, with nothing hanging from it. The tops of a row of heavy letters
+// (a bold heading) can line up into something as long and as straight, but there are gaps between the letters, and the
+// letters themselves hang underneath.
+function ruled(ink, width, height, line) {
+  const dark = (x, y) => y >= 0 && y < height && ink[y * width + x] === 1, span = line.x1 - line.x0 + 1;
+  let covered = 0, hanging = 0;
+  for (let x = line.x0; x <= line.x1; x++) {
+    let on = false;
+    for (let y = line.y0 - 1; y <= line.y1 + 1 && !on; y++) on = dark(x, y);
+    if (on) covered++;
+    for (let y = line.y1 + 2; y < line.y1 + 6; y++) if (dark(x, y)) hanging++;
+  }
+  return covered >= span * 0.9 && hanging <= span * 4 * 0.25;
+}
+
 // The angle a page is turned by, in degrees: the one at which rows of ink line up best (a photo taken a little crooked).
 export function skewOf(gray, width, height) {
   const ink = threshold(gray, width, height), points = [];
@@ -134,11 +169,13 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
     }
   }
   if (debug) debug({ hShort, vLines, unit, tol });
-  // Checkboxes: a small square, its four sides found, nothing inside.
+  // Checkboxes: a small square, its four sides found, its corners inked, nothing inside. The top and bottom must end
+  // at the same places, to within a fifth of the side (a box that small is not found by the page-wide allowance).
   for (const top of hShort) for (const bottom of hShort) {
-    const side = top.x1 - top.x0, gap = bottom.y0 - top.y1;
-    if (gap < side * 0.6 || gap > side * 1.4 || Math.abs(bottom.x0 - top.x0) > tol || Math.abs(bottom.x1 - top.x1) > tol) continue;
+    const side = top.x1 - top.x0, gap = bottom.y0 - top.y1, ends = Math.max(4, Math.round(side * 0.2));
+    if (gap < side * 0.6 || gap > side * 1.4 || Math.abs(bottom.x0 - top.x0) > ends || Math.abs(bottom.x1 - top.x1) > ends) continue;
     if (!vAt(top.x0, top.y0, bottom.y1).length || !vAt(top.x1, top.y0, bottom.y1).length) continue;
+    if (corners(ink, width, height, top, bottom) < 3) continue;        // the ring of a letter
     const inset = Math.max(3, Math.round(side * 0.18)), cell = { x0: top.x0 + inset, y0: top.y1 + 2, x1: top.x1 - inset, y1: bottom.y0 - 2 };
     if (inkIn(ink, width, cell.x0, cell.y0, cell.x1, cell.y1) < 0.05 && !blanks.some(blank => blank.kind === 'check' && Math.abs(blank.x0 - cell.x0) < tol && Math.abs(blank.y0 - cell.y0) < tol)) blanks.push({ kind: 'check', ...cell });
   }
@@ -152,6 +189,7 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
     const area = { x0: line.x0, y0: line.y0 - unit * 1.5, x1: line.x1, y1: line.y0 - 2 };
     if (area.y0 < 0) continue;
     if (inkIn(ink, width, area.x0, area.y0, area.x1, area.y1) > 0.02) continue;      // an underlined heading, or a line already written on
+    if (!ruled(ink, width, height, line)) continue;                                     // the tops of a row of bold letters
     blanks.push({ kind: 'line', ...area });
   }
   // A row of labelled cells over a row of empty ones is a table's header: those labels are not blanks.

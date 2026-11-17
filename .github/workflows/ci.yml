@@ -1,5 +1,6 @@
-# Every push and pull request: the unit and command-line tests, a build, and the whole page walked in Chromium at
-# phone size. The handwriting step is left out here (it downloads a 64 MB model); run it on a computer with
+# Every push and pull request: the never-list gate, the unit and command-line tests, a build, and the whole page
+# walked at phone size, in Chromium here and in WebKit (the engine of Safari, an iPhone and the Mac app) on a Mac.
+# The handwriting step is left out (it downloads a 64 MB model); run it on a computer with
 #   node scripts/walk.cjs dist --handwriting
 name: Tests
 on:
@@ -24,5 +25,18 @@ jobs:
       - run: node scripts/never-list.mjs --all --history
       - run: npm test
       - run: npm run build
-      - run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium
       - run: node scripts/walk.cjs dist
+  webkit:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: brew install poppler
+      - run: npm run build
+      - run: npx playwright install webkit
+      - run: node scripts/walk.cjs dist --engine webkit

@@ -106,18 +106,26 @@ function dropDangling(doc) {
 // pages: [{ width, height (pixels of the picture the blanks were found on), image: { bytes, type } | null,
 //          pdfPage: index in `sourcePdf` | null }]; blanks: [{ page, kind, x0, y0, x1, y1, field? }]; values: one per blank.
 // `problems`, when given, collects what could not be filled as asked.
-export async function buildPdf({ pages, blanks, values, sourcePdf, editable, note, problems = [] }) {
+// A source PDF is carried over whole: `pages` may list only some of its pages (the page shows a long form's first
+// pages only), and the others come through as they are, in their own order. `keepOtherPages: false` leaves them out.
+export async function buildPdf({ pages, blanks, values, sourcePdf, editable, note, problems = [], keepOtherPages = true }) {
   const source = sourcePdf ? await PDFDocument.load(sourcePdf, { ignoreEncryption: true }) : null;
   // The PDF's own fields are filled in the PDF itself. Every page of it is kept, in its own order.
   const ownFields = Boolean(source && !source.isEncrypted && blanks.some(blank => blank.field));
   const doc = ownFields ? source : await PDFDocument.create(), font = await doc.embedFont(StandardFonts.Helvetica);
   const form = editable || ownFields ? doc.getForm() : null;
   if (ownFields && form.hasXFA()) form.deleteXFA();   // the PDF's second, XFA copy of the form would otherwise hide what was filled
-  const out = [];
+  const out = [], listed = page => page.pdfPage !== null && page.pdfPage !== undefined;
+  // A PDF with no fields of its own whose pages can be copied: all of it is copied once, so a page that is not listed
+  // is not lost and the pages stay in the form's order.
+  const whole = Boolean(source && !source.isEncrypted && !ownFields && keepOtherPages && pages.some(listed));
+  const copies = whole ? await doc.copyPages(source, source.getPageIndices()) : null;
+  if (copies) for (const copy of copies) doc.addPage(copy);
   for (const [index, page] of pages.entries()) {
     if (ownFields) { out[index] = doc.getPage(page.pdfPage); continue; }
     let pdfPage;
-    if (source && !source.isEncrypted && page.pdfPage !== null && page.pdfPage !== undefined) { [pdfPage] = await doc.copyPages(source, [page.pdfPage]); doc.addPage(pdfPage); }
+    if (copies && listed(page)) pdfPage = copies[page.pdfPage];
+    else if (source && !source.isEncrypted && listed(page)) { [pdfPage] = await doc.copyPages(source, [page.pdfPage]); doc.addPage(pdfPage); }
     else {
       // A photo, or a locked PDF whose pages cannot be copied: the page picture itself.
       const width = 612, height = 612 * page.height / page.width;

@@ -131,6 +131,27 @@ test('several filled copies join into one PDF, page after page', async () => {
   assert.equal(joined.getPageCount(), 3);
 });
 
+test('a PDF longer than the pages shown keeps every page, in order: the ones past the last blank are not lost', async () => {
+  // The page shows a long form's first 10 pages only. An invented 12-page PDF with no fields of its own.
+  const long = await PDFDocument.create();
+  for (let sheet = 1; sheet <= 12; sheet++) long.addPage([612, 792]).drawText('Sheet ' + sheet + ' of the invented form', { x: 72, y: 700, size: 12 });
+  const sourcePdf = await long.save();
+  const pages = Array.from({ length: 10 }, (_, index) => ({ width: 1700, height: 2200, pdfPage: index, image: null }));
+  const blanks = [{ page: 0, kind: 'line', x0: 200, y0: 500, x1: 900, y1: 560 }, { page: 9, kind: 'line', x0: 200, y0: 500, x1: 900, y1: 560 }];
+  const values = ['Jane Roe', 'Last shown page'];
+  for (const editable of [true, false]) {
+    const bytes = await lib.buildPdf({ pages, blanks, values, sourcePdf, editable });
+    assert.equal((await PDFDocument.load(bytes)).getPageCount(), 12, (editable ? 'editable' : 'print-ready') + ': all 12 pages');
+    const sheets = pdfText(bytes).split('\f').filter(text => text.trim());
+    assert.equal(sheets.length, 12);
+    sheets.forEach((text, index) => assert.ok(text.includes('Sheet ' + (index + 1) + ' of'), 'page ' + (index + 1) + ' is still sheet ' + (index + 1)));
+    if (!editable) { assert.ok(sheets[0].includes('Jane Roe'), 'the first answer is on page 1'); assert.ok(sheets[9].includes('Last shown page'), 'the last answer is on page 10'); }
+    else assert.deepEqual((await PDFDocument.load(bytes)).getForm().getFields().map(field => field.getText()), values);
+  }
+  // A program that wants only the pages it lists can say so.
+  assert.equal((await PDFDocument.load(await lib.buildPdf({ pages, blanks, values, sourcePdf, editable: false, keepOtherPages: false }))).getPageCount(), 10);
+});
+
 test('a handwritten page (handwriting-style fonts on ruled paper) is cut into its five lines, the rules left out', () => {
   const { gray, width, height } = grayOfPng(fixture('handwritten.png'));
   const lines = lib.segmentLines(gray, width, height);

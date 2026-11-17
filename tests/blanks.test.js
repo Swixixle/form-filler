@@ -30,6 +30,19 @@ test('the same form as a crooked, shaded phone photo: straightened, then the sam
   assert.deepEqual(findBlanks(straight, width, height).map(blank => blank.kind), EXPECTED);
 });
 
+test('the same forms as WebKit draws them (Safari, an iPhone, the Mac app): no blank where there is none', () => {
+  // form-webkit.png and fillable-webkit.png are the two invented PDFs exactly as WebKit 26.6 drew them for the page
+  // (the gray pixels the blank finder was given). WebKit draws small print a little differently from Chromium, and
+  // two things that are not blanks used to pass for them there.
+  const form = grayOf('form-webkit.png'), fillable = grayOf('fillable-webkit.png');
+  const onForm = findBlanks(form.gray, form.width, form.height);
+  assert.deepEqual(onForm.map(blank => blank.kind), EXPECTED, 'the ring of the Q in "Qty" is not a checkbox: ' + JSON.stringify(onForm.filter(blank => blank.kind === 'check')));
+  const onFillable = findBlanks(fillable.gray, fillable.width, fillable.height);
+  assert.ok(onFillable.every(blank => blank.y0 > 200), 'the tops of the bold title\'s letters are not a line to write on: ' + JSON.stringify(onFillable[0]));
+  // What is left: the four text fields' boxes, the checkbox, the big box, and the signature line (a radio button is round, not a box).
+  assert.deepEqual(onFillable.map(blank => blank.kind), ['box', 'box', 'box', 'box', 'check', 'box', 'line']);
+});
+
 test('answers: periods and new lines move on, a dash or extra period leaves a blank empty, a number jumps', () => {
   assert.deepEqual(splitAnswers('Jane Roe. 11/13/2026. Respiratory\n\nPEEP 7.5 cm. Dr. Patel. J. R. Smith').map(answer => answer.text),
     ['Jane Roe', '11/13/2026', 'Respiratory', 'PEEP 7.5 cm', 'Dr. Patel', 'J. R. Smith']);

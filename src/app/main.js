@@ -59,8 +59,10 @@ const isPdf = file => /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
 // field already holds, such as a default choice, shows through under the answer that will replace it).
 async function pagesOf(file, bytes, withoutFields = false) {
   if (isPdf(file)) {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    // pdf.js's "legacy" build: the same reader, carrying its own copies of the newest JavaScript features, so a PDF
+    // also opens in a browser a year or two old (there the ordinary build stops with "getOrInsertComputed is not a function").
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
     const pdf = await pdfjs.getDocument({ data: bytes.slice(0) }).promise, pages = [];
     for (let number = 1; number <= Math.min(pdf.numPages, MAX_PAGES); number++) {
       const page = await pdf.getPage(number), base = page.getViewport({ scale: 1 }), scale = WIDTH / base.width, viewport = page.getViewport({ scale });
@@ -106,7 +108,7 @@ async function openForm(file) {
     form = { name: file.name, bytes, hash: await sha256(bytes), pdf, locked: Boolean(own?.encrypted), pages };
     blanks = []; overrides = {}; prints = {}; remembered = false; merge = null;
     const notes = [];
-    if (more) notes.push('Only the first ' + MAX_PAGES + ' pages are shown; the other ' + more + ' are kept as they are.');
+    if (more) notes.push('Only the first ' + MAX_PAGES + ' pages are shown; the other ' + more + (own?.encrypted ? ' cannot be carried into the filled copy, because this PDF is locked.' : ' are kept as they are.'));
     let fields = [];
     if (own) {
       if (own.encrypted) notes.push('This PDF is locked against changes, so the filled copy is made from pictures of its pages.');

@@ -3,18 +3,23 @@
 // remembers a form, fills your details and today's date, signs, makes copies from a CSV, saves and reopens a template,
 // prefills from a link, works offline, and (with --handwriting) reads the synthetic handwritten page. Every PDF is
 // checked with pdftotext and pdf-lib.
-//   node scripts/walk.cjs [dist] [--shots DIR] [--handwriting]
+//   node scripts/walk.cjs [dist] [--engine chromium|webkit] [--browser-path FILE] [--shots DIR] [--handwriting]
+// --engine webkit walks the same steps in WebKit, the engine of Safari, of an iPhone and of the Mac app's window.
+// --browser-path walks in another build of the engine (an older one, say) instead of the one Playwright installed.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
-const { chromium } = require('playwright');
+const playwright = require('playwright');
 
 const folder = path.resolve(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'dist');
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
 const handwriting = process.argv.includes('--handwriting');
+const option = name => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null;
+const engine = option('--engine') || 'chromium', browserPath = option('--browser-path');
+if (!playwright[engine]?.launch) { console.error('Unknown --engine "' + engine + '": use chromium or webkit.'); process.exit(2); }
 const fixtures = path.resolve(__dirname, '../tests/fixtures');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'form-filler-walk-'));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.gz': 'application/gzip', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
@@ -35,8 +40,13 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     response.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' }).end(fs.readFileSync(file));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const origin = 'http://127.0.0.1:' + server.address().port + '/';
-  const browser = await chromium.launch();
+  const port = server.address().port, origin = 'http://127.0.0.1:' + port + '/', sockets = new Set();
+  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  // The server gone, as when there is no connection (nothing can be fetched from it), and back again.
+  const serverDown = () => new Promise(resolve => { server.close(resolve); for (const socket of sockets) socket.destroy(); });
+  const serverUp = () => new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
+  const browser = await playwright[engine].launch(browserPath ? { executablePath: browserPath } : {});
+  console.log('Walking in ' + engine + ' ' + browser.version() + (browserPath ? ' (' + browserPath + ')' : '') + '.');
   const outside = [], problems = [];
   const open = async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, acceptDownloads: true });
@@ -196,6 +206,26 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     assert.equal((await fieldsOf(merged)).length, 0, 'merged copies are print-ready');
     await shot('form-6-merge');
   });
+  await step('a PDF longer than the 10 pages shown: every page is in the filled copy, in order, and the page says so', async () => {
+    const long = await PDFDocument.create();
+    for (let sheet = 1; sheet <= 12; sheet++) {
+      const sheetPage = long.addPage([612, 792]);
+      sheetPage.drawText('Sheet ' + sheet + ' of the invented form', { x: 72, y: 720, size: 12 }); sheetPage.drawText('Name:', { x: 72, y: 652, size: 11 });
+      sheetPage.drawLine({ start: { x: 112, y: 650 }, end: { x: 380, y: 650 }, thickness: 1 });
+    }
+    const file = path.join(scratch, 'long.pdf'); fs.writeFileSync(file, await long.save());
+    await page.setInputFiles('#form-file', file);
+    await page.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes('long.pdf'), null, { timeout: 300000 });
+    assert.match(await summary(), /10 pages · 10 blanks found/);
+    assert.match(await page.locator('.note').first().innerText(), /Only the first 10 pages are shown; the other 2 are kept as they are\./);
+    await typeAnswers('Jane Roe');
+    for (const [button, name] of [['#pdf-edit', 'long-filled.pdf'], ['#pdf-print', 'long-print.pdf']]) {
+      const made = await save(button, name), sheets = pdfText(made).split('\f').filter(text => text.trim());
+      assert.equal((await PDFDocument.load(fs.readFileSync(made))).getPageCount(), 12, name + ' has all 12 pages');
+      sheets.forEach((text, index) => assert.ok(text.includes('Sheet ' + (index + 1) + ' of'), name + ': page ' + (index + 1) + ' is sheet ' + (index + 1)));
+    }
+    assert.ok(pdfText(path.join(scratch, 'long-print.pdf')).split('\f')[0].includes('Jane Roe'), 'the answer is on page 1');
+  });
   let templateFile;
   await step('a template file: the photo form\'s blanks and its page picture, in plain JSON another program can read', async () => {
     await openForm('form-photo.png', 'remembered from last time');
@@ -205,12 +235,17 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     assert.match(template.pages[0].image, /^data:image\/jpeg;base64,/);
   });
   await step('offline: with no connection the page opens again and still finds a new form\'s blanks', async () => {
-    await context.setOffline(true);
-    await page.reload();
-    await page.waitForSelector('#form-file', { state: 'attached' });
-    await openForm('form.png', 'blanks found');
-    assert.match(await summary(), /13 blanks found/);
-    await context.setOffline(false);
+    // The server is taken away, so nothing can be fetched; the page has to come from what it kept. (The browser's
+    // own "offline" switch is not used: in WebKit under Playwright it stops the kept page from loading too.)
+    await serverDown();
+    try {
+      await page.reload();
+      await page.waitForSelector('#form-file', { state: 'attached' });
+      assert.equal(await page.evaluate(() => fetch('./manifest.webmanifest?fresh=' + Date.now(), { cache: 'no-store' }).then(response => response.headers.get('content-type'))), 'application/manifest+json', 'the kept copy answers');
+      assert.equal(await new Promise(resolve => http.get(origin, () => resolve('answered')).on('error', () => resolve('no connection'))), 'no connection', 'and the server really is gone');
+      await openForm('form.png', 'blanks found');
+      assert.match(await summary(), /13 blanks found/);
+    } finally { await serverUp(); }
   });
   await context.close();
   ({ context, page } = await open());
@@ -266,6 +301,24 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     assert.equal(now[2], 'Jane Roe'); assert.equal(now[6], 'Respiratory Care'); assert.equal(now[1], 'Ventilator');
     console.log('        note: ' + await page.locator('.note').first().innerText());
     await page.locator('.sheet').first().scrollIntoViewIfNeeded(); await shot('form-9-numbered-paper');
+  });
+  await step('in a browser without the newest JavaScript (no Map.getOrInsertComputed, as in Chromium 143) a PDF still opens', async () => {
+    // What such a browser lacks is taken away here, once, before anything else runs: in the page by a script that
+    // runs first, and in the PDF reader's worker (which that script does not reach) by putting the same line at the
+    // top of the worker's own file.
+    const strip = 'for (const kind of [Map, WeakMap]) for (const name of ["getOrInsertComputed", "getOrInsert"]) delete kind.prototype[name]; delete Math.sumPrecise;\n';
+    const old = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+    try {
+      await old.addInitScript(strip);
+      await old.route(url => /pdf\.worker[^/]*\.mjs$/.test(url.pathname), async route => { const response = await route.fetch(); await route.fulfill({ response, body: strip + await response.text() }); });
+      const other = await old.newPage();
+      await other.goto(origin);
+      assert.equal(await other.evaluate(() => typeof Map.prototype.getOrInsertComputed), 'undefined', 'the feature really is missing here');
+      await other.setInputFiles('#form-file', path.join(fixtures, 'fillable.pdf'));
+      await other.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.sheet') || document.querySelector('.note')), null, { timeout: 120000 });
+      assert.deepEqual(await other.locator('.note').allInnerTexts(), [], 'the page reports no error');
+      assert.match(await other.locator('.panel .subtle').first().innerText(), /9 blanks found · 8 are the PDF’s own fields/);
+    } finally { await old.close(); }
   });
   await step('on a computer: a form dropped on the page opens, the answers box is ready to type in, and it sits beside the form', async () => {
     await context.close();
