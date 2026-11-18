@@ -187,6 +187,14 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
     read and fork it on GitHub but have no permission to use it, and there is no warranty disclaimer. **[V]** that it
     is missing; **[I]** the legal effect (general knowledge, not legal advice).
 
+11. **Blanks that are not there, in tables with tight rows** (found 2026-11-17, after this inventory was written). In a
+    table whose rows are about 61 px high at the page's working width of 1700 px (22 pt on a Letter page), the upright
+    strokes of a header's letters are long enough to pass for cell walls. The header cell is split, and parts of it
+    are offered as blanks. On the invented `tests/fixtures/tight-table.png` the finder returns 8 blanks where there
+    are 6. Every answer typed in order after such a blank lands one blank late. Rows of 70 px, like the invented
+    equipment form's, escape it by a few pixels. **[V]** A test that says what should happen is in
+    `tests/blanks.test.js`, marked as known-failing ("todo") until the finder is fixed.
+
 Smaller notes: the repository has no git tags, so 2.0.0 and 2.1.0 exist only in `CHANGELOG.md` and `package.json`.
 ## The patches
 

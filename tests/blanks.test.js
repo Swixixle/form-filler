@@ -80,6 +80,18 @@ test('an option button is called by the words after it, and its set by the quest
   assert.equal(labelFor(sets[3], words, 49), 'Parking needed?'); assert.equal(labelFor(sets[4], words, 49), 'Wheelchair access?');
 });
 
+// KNOWN DEFECT 11 (docs/INVENTORY.md): in a table whose rows are about 61 px high at the page's working width (22 pt
+// on a Letter page), the upright strokes of the header's letters pass for cell walls, so the header cell is split and
+// parts of it are offered as blanks. A blank that is not there shifts every answer typed after it by one. This test
+// says what should happen; it fails today, and node:test reports it as "todo" until the finder is fixed.
+test('a table with tight rows (61 px): its six empty cells are the blanks, and nothing in its header row', { todo: 'known defect 11: letters in a tight header row are taken for cell walls' }, () => {
+  // tests/fixtures/tight-table.png (scripts/make-tight-table-fixture.mjs): Visitor | Room | Badge over two empty rows.
+  const { gray, width, height } = grayOf('tight-table.png');
+  const blanks = findBlanks(gray, width, height), headerBottom = 370;
+  assert.deepEqual(blanks.filter(blank => blank.y0 < headerBottom).map(blank => [blank.kind, blank.x0, blank.y0, blank.x1, blank.y1]), [], 'no blank in the header row');
+  assert.deepEqual(blanks.map(blank => blank.kind), ['box', 'box', 'box', 'box', 'box', 'box']);
+});
+
 test('answers: periods and new lines move on, a dash or extra period leaves a blank empty, a number jumps', () => {
   assert.deepEqual(splitAnswers('Jane Roe. 11/13/2026. Respiratory\n\nPEEP 7.5 cm. Dr. Patel. J. R. Smith').map(answer => answer.text),
     ['Jane Roe', '11/13/2026', 'Respiratory', 'PEEP 7.5 cm', 'Dr. Patel', 'J. R. Smith']);

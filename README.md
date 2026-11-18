@@ -193,6 +193,10 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
   characters wrong, measured 2026-11-17; an earlier run measured 1.4%). The larger reader is not known to be better: it
   got the date wrong too (11.6%). A person's own hand will do worse, joined-up writing worst. Lines must be written
   apart from each other; two lines that touch are split at their thinnest row, which can cut a tall letter.
+- **Tables with tight rows can gain blanks that are not there.** In a table whose rows are under about 25 pt high,
+  the strokes of the header's letters can be taken for cell walls, and parts of the header row are offered as blanks.
+  Every answer typed in order after such a blank lands one blank late. Check a table's blank numbers before typing,
+  or put answers there by number ("7) Lee Doe"). A known defect, to be fixed next.
 - **A photo taken at an angle** (not just turned) is straightened for rotation only, not perspective.
 - **Dotted-line blanks and blanks with no line or box**, such as a gap after a colon: add them by hand.
 - **Long PDFs**: only the first 10 pages are shown and filled; the rest are kept as they are. A locked PDF is filled as
