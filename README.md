@@ -107,9 +107,11 @@ fingerprints.
 
 - a crooked photo straightened and its 13 blanks found; the same form as a PDF, keeping its own page;
 - answers placed, changed on the form, signed; a blank added by hand and removed;
-- checkboxes labelled by their own captions on either side, Yes/No pairs both ways round, a box that cannot be told
-  shown as unclear, and a CSV column "Day" ticking the Day box; the same sheet as a PDF, no box getting words that
-  are not its own; a form remembered and a template saved by an older version each saying so;
+- checkboxes labelled by their own captions on either side, Yes/No pairs both ways round, and a box that cannot be
+  told shown as unclear;
+- the same form and sheet as PDFs: no box gets another box's words, and a CSV column "Day" goes to the Day box (or
+  to none, where that box is unclear) and never to the Night box;
+- a form remembered and a template saved by an older version each saying so;
 - a PDF's own fields found and filled, radio buttons included, and a choice it does not offer reported;
 - a 12-page PDF filled with all 12 pages kept, in order; many copies from a CSV;
 - templates saved and opened on a "new device"; answers handed over in a link;
@@ -194,8 +196,10 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
   price beside it ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, and a caption that wraps to the next line
   are left unclear even when a person could tell. A note, price or code the rule does not recognise can still end up
   in a box's name ("Employed answer 5a", "Adult 12pp", "Daily DY", "Oui précisez"), and the reader can misread a caption's
-  own letters ("Adutt"). Labels decide which of your details fill a blank and which CSV column goes where, so check
-  the list before relying on them.
+  own letters ("Adutt"). On a PDF, the words are read from the page as this browser draws it. A PDF that names its
+  fonts without carrying them is drawn with the device's own, so it can read differently on another device: on
+  GitHub's Linux machine the invented form's "Day" came back "pay", and that box was left unclear. Labels decide which
+  of your details fill a blank and which CSV column goes where, so check the list before relying on them.
 - **Blank numbers sit over the start of a label** on a photographed form ("Na… 1" above). The list under *Your
   answers* gives each number with its whole label.
 - **Round option buttons drawn on a page** (not a PDF's own radio buttons, which work) are not found by the page yet.
