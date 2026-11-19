@@ -97,7 +97,7 @@ function check() {
   try { template = readTemplate(read(file).toString('utf8')); } catch (error) { fail(error.message); }
   const kinds = {}; for (const blank of template.blanks) kinds[blank.kind] = (kinds[blank.kind] || 0) + 1;
   process.stdout.write((template.form.name || 'form') + ' (' + template.form.type + ', SHA-256 ' + template.form.sha256 + '): ' + template.pages.length + ' page(s), ' + template.blanks.length + ' blanks (' + Object.entries(kinds).map(([kind, count]) => count + ' ' + kind).join(', ') + ')\n');
-  template.blanks.forEach((blank, index) => process.stdout.write(String(index + 1).padStart(3) + '  ' + blank.kind.padEnd(6) + ' ' + (blank.label || '') + (blank.field ? '  [' + blank.field + ']' : '') + (blank.options ? '  {' + blank.options.join(' | ') + '}' : '') + '\n'));
+  template.blanks.forEach((blank, index) => process.stdout.write(String(index + 1).padStart(3) + '  ' + blank.kind.padEnd(6) + ' ' + (blank.label || (blank.unsure ? '(unclear: ' + blank.unsure.join(' or ') + ')' : '')) + (blank.field ? '  [' + blank.field + ']' : '') + (blank.options ? '  {' + blank.options.join(' | ') + '}' : '') + '\n'));
 }
 
 if (command === 'fields') await fields();

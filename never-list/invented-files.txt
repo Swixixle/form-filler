@@ -1,7 +1,7 @@
 # Pictures, PDFs and other files that are not text, each listed by someone who says it is invented: no real
 # person, form or document. The never-list gate refuses any such file that is not here. Add one with:
 #   npm run never-list -- vouch FILE
-1fc0573666b7af8b828219ff688a3f91a3830574f3ffd579fa9d24eb8edce2fc  docs/images/answers.png
+9e5968317eeaa9c14338625d48da14bdafb0da646a8e8aea4dd1617afeb72d08  docs/images/answers.png
 308d195cb5d855f79611a4a6bc20ce1424d8fc352f83baf6a6d2c3ed655564ee  docs/images/blanks.png
 495fa42f2d10c0b362939d46ac279a2778101f6aaf3e89fb2ca1888d4598af5c  docs/images/filled.png
 74946869f6a65bc21ebcdb7f85f96d3160e6d34f48646ca2ebde9399fd75506d  docs/images/webkit-qty.png
@@ -9,6 +9,8 @@
 257b012db805e187d4f2d4373f64367a9527637b6884773fe46189ce25880d04  public/icons/icon-192.png
 79b8d7016536ed31274dd337e6b7b351d22b6696fca589f5349422315d09899b  public/icons/icon-512.png
 8f0afde19715fc9540259ac6ef0569374dae6cc76dd3ff37fa180fba43d4c771  public/icons/maskable-512.png
+0a9891f9f9b66ba481171c6c7b418e49b5b04176e178ce4b6509a7d0f63fd891  tests/fixtures/checkboxes.pdf
+9dbca57030be8b2e4cb18f368faa05acafec38e0b49e0834d3ea6e198a89e0ea  tests/fixtures/checkboxes.png
 eede88592e2334edd21afc1b45a7a3c352dd3ea50b3fceb0a04bd9ac01f7ab17  tests/fixtures/fillable-webkit.png
 cde6cd68ed0204112cac08833ab2c531f5102b2a92a48b043c8095a89b59707d  tests/fixtures/fillable.pdf
 24e74d90967c3afd61e682317a997310187a84b3296f1e544ff32025e7649659  tests/fixtures/form-photo.png

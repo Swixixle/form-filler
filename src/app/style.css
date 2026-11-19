@@ -95,3 +95,6 @@ body.dropping::after { content: 'Drop the form to open it'; position: fixed; ins
 }
 @media print { .work { display: block; } }
 .version { text-align: center; color: var(--muted); font-size: .75rem; margin: 18px 0 0; }
+.list .label.unsure { color: #9a3412; font-style: italic; }
+/* The warning colours, lighter on the dark panel (9.9:1 there; #9a3412 gives 2.3:1). */
+@media (prefers-color-scheme: dark) { .list .label.unsure, .list .miss, .columns .miss { color: #fdba74; } }

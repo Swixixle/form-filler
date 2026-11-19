@@ -1,5 +1,22 @@
 # Changes
 
+## 2.3.0 (2026-11-19)
+
+- **Checkbox labels.** A checkbox is labelled by its own caption, on its right ("[ ] Yes") or its left ("Yes [ ]"),
+  judged for the whole group of boxes on its line. Before, it took the words on its left: on the invented form the box
+  beside "Day" was called "Shift" and the Night box "Day", so a CSV column "Day" ticked the Night box.
+- **Never a guess.** When the words that belong to a box cannot be told, the box is listed as unclear, with the words
+  it might be, and no CSV column goes to it. That covers a word as near one box as the next, a note, number, code or
+  price beside a caption ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, a caption that may run on to the
+  next line, and headings over boxes that have words beside them too. The rule leans to unclear: some captions a
+  person could tell are left unclear as well.
+- **Forms and templates from an earlier version** keep their blanks and old labels, so blanks added or removed by hand
+  are not lost, and say so; *Find the blanks again* names their checkboxes anew.
+- A CSV column named like both a checkbox and the line its caption names ("[ ] Other: ____") goes to the line, as
+  before. `form-filler check` lists an unclear checkbox with the words it might be.
+- In the library: `labelBlanks` labels a page's blanks; `cleanWords` drops the reader's words for a checkbox's square
+  and recovers a caption the reader ran into it. Templates keep `unsure`, and mark labels made this way (`labels: 2`).
+
 ## 2.2.0 (2026-11-17)
 
 - **Safari, iPhone and other WebKit browsers:** two things that are not blanks were taken for blanks on PDFs there (the

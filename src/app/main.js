@@ -1,5 +1,5 @@
 import './style.css';
-import { findBlanks, skewOf, order, labelFor } from '../lib/blanks.js';
+import { findBlanks, skewOf, order, labelBlanks } from '../lib/blanks.js';
 import { placeAnswers, numberedLines } from '../lib/answers.js';
 import { buildPdf, joinPdfs, isSignature } from '../lib/output.js';
 import { readFields, withFound, pickOption } from '../lib/fields.js';
@@ -34,7 +34,16 @@ const asDetails = value => value && typeof value === 'object' && !Array.isArray(
 let useDetails = store.get('useDetails', true) !== false, profile = asDetails(store.get('profile', {})), savedSignature = asSignature(store.get('signature', null));
 let merge = null;         // { name, headers, rows, columns, unmatched, shared }
 let hand = null;          // { lines: [{ img, text, done }], model }
-let pendingTemplate = null;
+let pendingTemplate = null, pendingMark = null;
+// 2 when the open form's blanks were named this version's way (a checkbox by its own caption, on either side): set
+// by a fresh find, carried by remembered forms and template files as `labels`, so an older one can be told apart.
+let labelsMark = null;
+// Blanks named by an earlier version (no mark of 2), with checkboxes it found on the page: it named a checkbox by the
+// words on its left, so the box beside "Day" could be called "Shift" and the next one "Day". Checkboxes added by hand
+// and a PDF's own checkbox fields were not named by it, so they do not count. Said wherever such blanks are put in place.
+const earlierLabels = mark => mark !== 2 && blanks.some(blank => !blank.field && blank.kind === 'check' && blank.label !== 'added by hand');
+const EARLIER = 'by an earlier version, which could give a checkbox the words of the box before it.';
+const AGAIN = ' Tap “Find the blanks again” to name the checkboxes again; a blank you added or removed by hand would need doing again.';
 let nextId = 1;
 
 // The value in each blank, in order of who has the last word: what you typed on the form itself, then your answers
@@ -92,7 +101,13 @@ async function pagesOf(file, bytes, withoutFields = false) {
 // A form's blanks, remembered by its fingerprint, without the page pictures (the form itself is open).
 const templateNow = withImages => makeTemplate({ form: { sha256: form.hash, name: form.name, type: form.pdf ? 'pdf' : 'image' },
   pages: form.pages.map(page => ({ ...page, image: withImages && !form.pdf ? page.canvas.toDataURL('image/jpeg', 0.85) : undefined })), blanks });
-const remember = () => { if (form) store.set('template:' + form.hash, templateNow(false)); };
+// A remembered form, or a template file, carries `labelsMark` as `labels` (see above); readTemplate ignores it.
+const marked = template => ({ ...template, ...(labelsMark ? { labels: labelsMark } : {}) });
+const remember = () => { if (form) store.set('template:' + form.hash, marked(templateNow(false))); };
+// The reader's words, with their letters: a caption the reader ran into a checkbox's square is cut at the square
+// letter by letter (see cleanWords).
+const wordsOf = data => (data.blocks || []).flatMap(block => block.paragraphs || []).flatMap(paragraph => paragraph.lines || []).flatMap(line => line.words || [])
+  .map(word => ({ text: word.text, confidence: word.confidence, bbox: word.bbox, symbols: (word.symbols || []).map(symbol => ({ text: symbol.text, confidence: symbol.confidence, bbox: symbol.bbox })) }));
 // A template fits a form whose pages have the same shapes; its blanks are scaled to the size the pages are drawn at
 // here (a template made by the command line from a PDF's own fields is in points, the page's in pixels).
 const fits = template => template.pages.length === form.pages.length && template.pages.every((page, index) => Math.abs(page.width / page.height - form.pages[index].width / form.pages[index].height) < 0.01);
@@ -105,12 +120,12 @@ const useTemplate = template => {
 };
 
 async function openForm(file) {
-  busy = 'Opening the form…'; note = ''; problems = []; render();
+  busy = 'Opening the form…'; note = ''; problems = []; pendingTemplate = null; pendingMark = null; render();
   try {
     const bytes = await file.arrayBuffer(), own = isPdf(file) ? await readFields(bytes) : null;
     const usable = Boolean(own && !own.encrypted && !own.rotated && own.blanks.length), { pdf, pages, more } = await pagesOf(file, bytes, usable);
     form = { name: file.name, bytes, hash: await sha256(bytes), pdf, locked: Boolean(own?.encrypted), pages };
-    blanks = []; overrides = {}; prints = {}; remembered = false; merge = null;
+    blanks = []; overrides = {}; prints = {}; remembered = false; merge = null; labelsMark = null;
     const notes = [];
     if (more) notes.push('Only the first ' + MAX_PAGES + ' pages are shown; the other ' + more + (own?.encrypted ? ' cannot be carried into the filled copy, because this PDF is locked.' : ' are kept as they are.'));
     let fields = [];
@@ -126,7 +141,11 @@ async function openForm(file) {
     const saved = store.get('template:' + form.hash, null);
     let template = null;
     try { template = saved ? readTemplate(saved) : null; } catch { template = null; }
-    if (template && fits(template)) { useTemplate(template); remembered = true; }
+    if (template && fits(template)) {
+      useTemplate(template); remembered = true; labelsMark = saved.labels ?? null;
+      // Not found again silently: blanks added or removed by hand would be lost.
+      if (earlierLabels(labelsMark)) notes.push('This form was remembered ' + EARLIER + AGAIN);
+    }
     else {
       const ocr = await reader();
       try {
@@ -134,15 +153,15 @@ async function openForm(file) {
           busy = 'Finding the blanks' + (pages.length > 1 ? ' on page ' + (index + 1) + ' of ' + pages.length : '') + '…'; render();
           await ocr.setParameters({ tessedit_pageseg_mode: '3' });
           const { data } = await ocr.recognize(page.canvas, {}, { blocks: true, text: false });
-          const words = (data.blocks || []).flatMap(block => block.paragraphs || []).flatMap(paragraph => paragraph.lines || []).flatMap(line => line.words || []).filter(word => word.confidence > 50);
-          const heights = words.map(word => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b), textHeight = heights.length ? heights[Math.floor(heights.length / 2)] : undefined;
+          const words = wordsOf(data);
+          const heights = words.filter(word => word.confidence > 50).map(word => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b), textHeight = heights.length ? heights[Math.floor(heights.length / 2)] : undefined;
           // The blank finder measures by the page, not by the reader's guess at the text size: the reader's guess makes
           // letters look like checkboxes on some pages. The text size is used only to find each blank's label.
-          const found = findBlanks(grayOf(page.canvas), page.width, page.height).map(blank => ({ ...blank, page: index, label: labelFor(blank, words, textHeight || 20) }));
+          const found = labelBlanks(findBlanks(grayOf(page.canvas), page.width, page.height).map(blank => ({ ...blank, page: index })), words, textHeight || 20);
           for (const blank of order(withFound(fields.filter(field => field.page === index), found), textHeight || 20)) blanks.push({ ...blank, id: nextId++, page: index });
         }
       } finally { await ocr.terminate(); }
-      remember();
+      labelsMark = 2; remember();
     }
     if (!blanks.length) notes.push('No blanks were found. Add them by hand: tap “Add or remove a blank”, then drag across each place to write.');
     note = notes.join(' ');
@@ -164,14 +183,20 @@ async function openFromTemplate(template) {
 
 async function openTemplateFile(file) {
   try {
-    const template = readTemplate(await file.text());
+    const text = await file.text(), template = readTemplate(text);
+    let mark = null;
+    try { mark = JSON.parse(text).labels ?? null; } catch { /* readTemplate has read it */ }
+    pendingTemplate = null; pendingMark = null;              // an offer made for an earlier template file lapses
     if (form && template.form.sha256 === form.hash) {
       if (!fits(template)) throw new Error('This template is for this form, but its pages are a different shape from the form’s.');
-      useTemplate(template); remember(); remembered = true; note = 'The template’s ' + blanks.length + ' blanks are in place.';
+      useTemplate(template); labelsMark = mark; remember(); remembered = true;
+      note = 'The template’s ' + blanks.length + ' blanks are in place.' + (earlierLabels(mark) ? ' It was saved ' + EARLIER + AGAIN : '');
     } else if (template.form.type === 'image' && template.pages.every(page => page.image)) {
-      await openFromTemplate(template); store.set('template:' + form.hash, templateNow(false)); note = 'Opened the form from the template file itself.';
+      // Opened from its own pictures, there is no form file here to find the blanks on again.
+      await openFromTemplate(template); labelsMark = mark; remember();
+      note = 'Opened the form from the template file itself.' + (earlierLabels(mark) ? ' The template was saved ' + EARLIER + ' To name them again, open the original form and tap “Find the blanks again”.' : '');
     } else if (form && fits(template)) {
-      pendingTemplate = template;
+      pendingTemplate = template; pendingMark = mark;
       note = 'This template was made for a different file (' + (template.form.name || 'no name') + ', fingerprint ' + template.form.sha256.slice(0, 12) + '…), though its pages are the same size as this form’s.';
     } else note = 'This template is for ' + (template.form.name || 'another form') + ' (fingerprint ' + template.form.sha256.slice(0, 12) + '…). Open that form first, then the template.';
   } catch (error) { note = error.message || String(error); }
@@ -241,7 +266,9 @@ function reorder() {
 }
 
 const signable = blank => blank.kind === 'sign' || (blank.kind !== 'check' && blank.kind !== 'choice' && isSignatureLabel(blank.label));
-const blankName = (blank, number) => 'Blank ' + (number + 1) + (blank.label ? ', ' + h(blank.label) : '');
+const blankName = (blank, number) => 'Blank ' + (number + 1) + (blank.label ? ', ' + h(blank.label) : blank.unsure ? ', label unclear' : '');
+// A checkbox whose caption could not be told is shown as unclear, with the words it might be.
+const unclear = blank => 'unclear: ' + blank.unsure.map(word => '“' + h(word) + '”').join(' or ') + (blank.unsure.length === 1 ? '?' : '');
 function blankInput(blank, number, value) {
   const name = ' data-blank="' + blank.id + '" aria-label="' + blankName(blank, number) + '"';
   if (isSignature(value)) return '<img class="signed" alt="Signature" src="' + h(value.signature) + '"><button type="button" class="unsign" data-unsign="' + blank.id + '" aria-label="Take the signature off blank ' + (number + 1) + '">×</button>';
@@ -268,7 +295,7 @@ function pageMarkup(page, index, values, fixed) {
 }
 const shown = (blank, value) => isSignature(value) ? '✍ signed' : blank.kind === 'check' ? (value ? '☑' : '☐')
   : blank.kind === 'choice' && value ? (pickOption(blank.options, value) ? '<b>' + h(pickOption(blank.options, value)) + '</b>' : '<b class="miss">' + h(value) + '</b> (not one of: ' + h(blank.options.join(', ')) + ')') : '<b>' + h(value || '—') + '</b>';
-const listMarkup = (values, fixed) => blanks.map((blank, index) => '<li><span class="label">' + h(blank.label || (blank.kind === 'check' ? 'checkbox' : 'blank')) + '</span> ' + shown(blank, values[index]) + (fixed.has(index) && !(blank.id in overrides) && values[index] === fixed.get(index) ? ' <span class="from">filled for you</span>' : '') + '</li>').join('');
+const listMarkup = (values, fixed) => blanks.map((blank, index) => '<li><span class="label' + (!blank.label && blank.unsure ? ' unsure" title="Which words belong to this box could not be told. Check it on the form.' : '') + '">' + (!blank.label && blank.unsure ? unclear(blank) : h(blank.label || (blank.kind === 'check' ? 'checkbox' : 'blank'))) + '</span> ' + shown(blank, values[index]) + (fixed.has(index) && !(blank.id in overrides) && values[index] === fixed.get(index) ? ' <span class="from">filled for you</span>' : '') + '</li>').join('');
 
 function detailsPanel() {
   return '<details class="panel" id="details-panel"' + (store.get('detailsOpen', false) ? ' open' : '') + '><summary><h2>Your details</h2></summary>' +
@@ -494,8 +521,11 @@ app.addEventListener('click', event => {
   if (target.id === 'pdf-print') void download(false);
   if (target.id === 'pdf-send') void send();
   if (target.id === 'print') window.print();
-  if (target.id === 'template-save') save(JSON.stringify(templateNow(true), null, 1), baseName() + ' - template.json', 'application/json');
-  if (target.id === 'template-anyway' && pendingTemplate) { useTemplate(pendingTemplate); pendingTemplate = null; remember(); remembered = true; note = 'The template’s blanks are in place. Check they sit where they should: it was made for a different file.'; render(); }
+  if (target.id === 'template-save') save(JSON.stringify(marked(templateNow(true)), null, 1), baseName() + ' - template.json', 'application/json');
+  if (target.id === 'template-anyway' && pendingTemplate) {
+    useTemplate(pendingTemplate); labelsMark = pendingMark; pendingTemplate = null; pendingMark = null; remember(); remembered = true;
+    note = 'The template’s blanks are in place. Check they sit where they should: it was made for a different file.' + (earlierLabels(labelsMark) ? ' It was saved ' + EARLIER + AGAIN : ''); render();
+  }
   if (target.id === 'refind' && form) { store.drop('template:' + form.hash); const { name, bytes } = form; void openForm(new File([bytes], name, { type: form.pdf ? 'application/pdf' : 'image/png' })); }
   if (target.id === 'csv-blank') blankCsv();
   if (target.id === 'merge-go') void makeMerge();
