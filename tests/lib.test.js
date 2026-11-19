@@ -123,6 +123,10 @@ test('mail merge: CSV read the standard way; columns match by number, field name
   assert.deepEqual(columns, [0, 1, 2, null, null]);
   assert.deepEqual(unmatched, ['Qty', 'Color']); assert.deepEqual(shared, ['Qty']);
   assert.deepEqual(lib.rowValues(blanks, columns, ['Jane', 'VNT-1', 'yes'], ['', '', false, '', '11/13/2026']), ['Jane', 'VNT-1', true, '', '11/13/2026']);
+  // "[ ] Other: ____": the box's caption is the line's label. The column fills the line, as before the box had a caption;
+  // two checkboxes, or two lines, sharing a label still match neither.
+  const other = [{ kind: 'check', label: 'Other' }, { kind: 'line', label: '[] Other' }, { kind: 'check', label: 'Yes' }, { kind: 'check', label: 'Yes' }];
+  assert.deepEqual(lib.matchColumns(other, ['Other', 'Yes']), { columns: [1, null], unmatched: ['Yes'], shared: ['Yes'] });
 });
 
 test('several filled copies join into one PDF, page after page', async () => {

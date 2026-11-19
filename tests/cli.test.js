@@ -59,6 +59,15 @@ test('fill --csv on a photographed form\'s template (which carries its own page 
   for (const word of ['Lee Doe', 'Pharmacy', 'Sam Poe', 'Respiratory']) assert.ok(text.includes(word), word);
 });
 
+test('check: a checkbox whose caption could not be told is listed as unclear, with the words it might be', () => {
+  const template = makeTemplate({ form: { sha256: 'c'.repeat(64), name: 'sheet.png', type: 'image' }, pages: [{ width: 1700, height: 2200, pdfPage: null }],
+    blanks: [{ page: 0, kind: 'check', x0: 100, y0: 100, x1: 120, y1: 120, label: 'Yes' }, { page: 0, kind: 'check', x0: 200, y0: 100, x1: 220, y1: 120, label: '', unsure: ['Maybe'] }] });
+  writeFileSync(at('unclear.json'), JSON.stringify(template));
+  const out = run('check', at('unclear.json'));
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /  1  check  Yes\n/); assert.match(out.stdout, /  2  check  \(unclear: Maybe\)\n/);
+});
+
 test('check: a damaged template is refused with exactly what is wrong', () => {
   const template = JSON.parse(readFileSync(at('fillable.json'), 'utf8')); template.blanks[3].page = 7;
   writeFileSync(at('bad.json'), JSON.stringify(template));

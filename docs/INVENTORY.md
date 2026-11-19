@@ -3,7 +3,8 @@
 Phase 1 of the build plan ([BUILD_PLAN.md](BUILD_PLAN.md)). Written 2026-11-17 against `main` at `2747d0b` (version 2.1.0).
 No feature code was changed to produce this.
 
-**Since it was written** (same day, branches `phase-1-inventory` and `phase-2`, not in `main`): defects 1, 2 and 3 and
+**Since it was written:** in 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
+on the same day (branches `phase-1-inventory` and `phase-2`): defects 1, 2 and 3 and
 the unescaped signature in defect 8 are fixed, each with a test that failed before; defect 9's first half is fixed
 (Playwright is declared); defect 10 is fixed (MIT licence). What changed and how it was checked is in
 [PHASE2_PROPOSAL.md](PHASE2_PROPOSAL.md) under "Slice 0". The rest of this file still describes `main`.

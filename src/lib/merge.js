@@ -26,17 +26,23 @@ const norm = text => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' '
 // For each column, the blank index it fills (or null), and the columns that matched nothing.
 export function matchColumns(blanks, headers) {
   const byLabel = new Map();
-  blanks.forEach((blank, index) => { const key = norm(blank.label); if (key && !byLabel.has(key)) byLabel.set(key, index); else if (key) byLabel.set(key, -1); });   // -1: two blanks share it
+  blanks.forEach((blank, index) => { const key = norm(blank.label); if (key) byLabel.set(key, [...(byLabel.get(key) || []), index]); });
+  // A label two blanks share matches neither (-1), with one exception: a checkbox and the line its caption names
+  // ("[ ] Other: ____"), where the column goes to the line, as it did before checkboxes were named by their captions.
+  const target = key => {
+    const found = byLabel.get(key), others = (found || []).filter(index => blanks[index].kind !== 'check');
+    return !found ? undefined : found.length === 1 ? found[0] : found.length === 2 && others.length === 1 ? others[0] : -1;
+  };
   const columns = headers.map(header => {
     const text = String(header).trim(), number = text.match(/^(?:#|blank\s*)?(\d{1,3})$/i);
     if (number) { const index = Number(number[1]) - 1; return index >= 0 && index < blanks.length ? index : null; }
     const field = blanks.findIndex(blank => blank.field && blank.field === text);
     if (field >= 0) return field;
-    const label = byLabel.get(norm(text));
+    const label = target(norm(text));
     return label === undefined || label < 0 ? null : label;
   });
   const unmatched = headers.filter((_, index) => columns[index] === null);
-  const shared = headers.filter(header => byLabel.get(norm(header)) === -1);
+  const shared = headers.filter(header => target(norm(header)) === -1);
   return { columns, unmatched, shared };
 }
 

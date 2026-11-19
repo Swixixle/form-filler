@@ -8,7 +8,7 @@ visit.
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
 **Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; this README
-describes 2.2.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+describes 2.3.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 Everything below describes what works today, except the section headed [Roadmap](#roadmap-planned-not-built), which
 is planned and not built.
@@ -40,7 +40,9 @@ One after another, in the form's order, as plain lines:
   space after it (jane@example.org) stays in the answer.
 
 The list under the box shows each blank's label and what it will get, so a wrong placement shows before anything is
-made.
+made. A checkbox is listed by its own caption, whichever side of the box it is printed on ("[ ] Yes" or "Yes [ ]").
+When that cannot be told (a word as near one box as the next, or a note, code or price beside the caption), the list
+says "unclear" instead of guessing, and no CSV column goes to that box.
 
 **Your details** (full, first and last name, e-mail, phone, street address, city, state, ZIP, date of birth) are saved
 once on the device and filled into any blank whose label asks for them. A label about someone else ("Patient name",
@@ -100,11 +102,16 @@ fingerprints.
 
 ## Tested in WebKit and Chromium
 
-`scripts/walk.cjs` drives the built page at phone size through 27 steps, using the invented forms in
+`scripts/walk.cjs` drives the built page at phone size through 32 steps, using the invented forms in
 `tests/fixtures`, and checks every PDF it makes with `pdftotext` and pdf-lib. Among them:
 
 - a crooked photo straightened and its 13 blanks found; the same form as a PDF, keeping its own page;
 - answers placed, changed on the form, signed; a blank added by hand and removed;
+- checkboxes labelled by their own captions on either side, Yes/No pairs both ways round, and a box that cannot be
+  told shown as unclear;
+- the same form and sheet as PDFs: no box gets another box's words, and a CSV column "Day" goes to the Day box (or
+  to none, where that box is unclear) and never to the Night box;
+- a form remembered and a template saved by an older version each saying so;
 - a PDF's own fields found and filled, radio buttons included, and a choice it does not offer reported;
 - a 12-page PDF filled with all 12 pages kept, in order; many copies from a CSV;
 - templates saved and opened on a "new device"; answers handed over in a link;
@@ -118,8 +125,9 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
-With `--handwriting` the walk also reads two synthetic handwritten pages (29 steps; it downloads the 64 MB model). The
-library and the command line have 33 unit tests (`npm test`).
+With `--handwriting` the walk also reads two synthetic handwritten pages (34 steps; it downloads the 64 MB model). The
+library and the command line have 174 unit tests (`npm test`); 30 of them are known limits of the checkbox labels,
+reported as "todo", and 9 of those are layouts where a box still gets words that are not its caption.
 
 Not tested: a real iPhone or a real Safari (Playwright's WebKit build stands in for them), real handwriting, and real
 forms.
@@ -182,9 +190,15 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
 
 ## What it cannot do (yet)
 
-- **Labels can be wrong.** A checkbox's label is read from the words to its left, so the box beside "Day" may be called
-  "Shift"; cells under a table's header row are called "blank". Labels decide which of your details fill a blank and
-  which CSV column goes where, so check the list before relying on them.
+- **Labels.** Cells under a table's header row are not labelled yet: the list calls them "blank". A checkbox is
+  left unclear whenever its caption is in doubt, and the rule leans to doubt: a caption with a note, number, code or
+  price beside it ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, and a caption that wraps to the next line
+  are left unclear even when a person could tell. A note, price or code the rule does not recognise can still end up
+  in a box's name ("Employed answer 5a", "Adult 12pp", "Daily DY", "Oui précisez"), and the reader can misread a caption's
+  own letters ("Adutt"). On a PDF, the words are read from the page as this browser draws it. A PDF that names its
+  fonts without carrying them is drawn with the device's own, so it can read differently on another device: on
+  GitHub's Linux machine the invented form's "Day" came back "pay", and that box was left unclear. Labels decide which
+  of your details fill a blank and which CSV column goes where, so check the list before relying on them.
 - **Blank numbers sit over the start of a label** on a photographed form ("Na… 1" above). The list under *Your
   answers* gives each number with its whole label.
 - **Round option buttons drawn on a page** (not a PDF's own radio buttons, which work) are not found by the page yet.
@@ -246,7 +260,8 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
   and leaves the submit click to you.
 
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
-browsers and long PDFs are in 2.2.0; the Mac app, vault, archive and backups are not started.
+browsers and long PDFs are in 2.2.0, and checkbox labels in 2.3.0; the Mac app, vault, archive and backups are not
+started.
 
 ## Licence
 

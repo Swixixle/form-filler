@@ -5,12 +5,15 @@
 //     "form": { "sha256": "<hex of the form file's bytes>", "name": "loan.pdf", "type": "pdf" | "image" },
 //     "pages": [{ "width": 1700, "height": 2200, "pdfPage": 0 | null, "angle": 0, "image"?: "data:image/jpeg;base64,…" }],
 //     "blanks": [{ "page": 0, "kind": "line" | "box" | "check" | "choice" | "sign", "x0", "y0", "x1", "y1", "label",
-//                  "field"?, "multiline"?, "maxLength"?, "options"?, "choice"? }] }
+//                  "field"?, "multiline"?, "maxLength"?, "options"?, "choice"?, "unsure"? }] }
+//
+// `unsure` (a checkbox's only, with label ""): up to three readings of the words that might be its caption, when which
+// words belong to it could not be told. readTemplate drops it anywhere else.
 //
 // Positions are pixels of the page picture (`width` by `height`). A template for a photo can carry the straightened
 // page picture itself (`image`), so a program with no way to straighten a photo can still make the PDF.
 export const KINDS = ['line', 'box', 'check', 'choice', 'sign'];
-const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'field', 'multiline', 'maxLength', 'options', 'choice'];
+const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'field', 'multiline', 'maxLength', 'options', 'choice', 'unsure'];
 
 export function makeTemplate({ form, pages, blanks }) {
   return {
@@ -49,6 +52,7 @@ export function readTemplate(input) {
     out.label = typeof blank.label === 'string' ? blank.label : '';
     if (blank.field !== undefined) out.field = String(blank.field);
     if (blank.multiline) out.multiline = true;
+    if (out.kind === 'check' && !out.label && Array.isArray(blank.unsure)) { const words = blank.unsure.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()).slice(0, 3); if (words.length) out.unsure = words; }
     if (Number.isInteger(blank.maxLength)) out.maxLength = blank.maxLength;
     if (blank.kind === 'choice') { if (!Array.isArray(blank.options)) fail(what + ' is a choice with no options'); out.options = blank.options.map(String); out.choice = blank.choice || 'list'; }
     return out;

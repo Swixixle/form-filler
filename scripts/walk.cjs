@@ -62,6 +62,13 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   const save = async (button, name) => { const [download] = await Promise.all([page.waitForEvent('download'), page.click(button)]); const file = path.join(scratch, name); await download.saveAs(file); return file; };
   const fieldsOf = async file => { const doc = await PDFDocument.load(fs.readFileSync(file)); return doc.getForm().getFields().map(field => [field.getName(), field.constructor.name === 'PDFCheckBox' ? field.isChecked() : field.constructor.name === 'PDFDropdown' ? field.getSelected()[0] : field.constructor.name === 'PDFRadioGroup' ? field.getSelected() : field.getText() ?? '']); };
   const summary = () => page.locator('.panel .subtle').first().innerText();
+  const labels = () => page.$$eval('.list li .label', spans => spans.map(span => span.textContent));
+  // On a PDF the page reads the words from its own drawing of the page. The invented PDFs name Helvetica without
+  // carrying it, so each device draws them with its own fonts, and a caption can read differently there (on GitHub's
+  // Linux machine "Day" came back "pay"). What must hold everywhere: a box is called by its own caption, by none
+  // ("checkbox"), or is unclear, and then none of the words it might be is another box's caption.
+  const readingsOf = label => [...label.matchAll(/“([^”]*)”/g)].map(match => match[1]);
+  const nothingOf = (label, others) => label === 'checkbox' || (/^unclear: /.test(label) && readingsOf(label).every(reading => !others.includes(reading)));
   const openForm = async (name, done) => { await page.setInputFiles('#form-file', path.join(fixtures, name)); await page.waitForFunction(text => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes(text), done, { timeout: 120000 }); };
   const typeAnswers = async text => { await page.fill('#answers', text); await page.waitForTimeout(100); };
   const expected = ['Jane Roe', '11/13/2026', 'Respiratory Care', 'Ventilator', 'VNT-2219', '1', 'Oximeter', 'OX-77', '2', false, true, 'Return by Friday', 'J. R. Smith'];
@@ -80,6 +87,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   await step('a crooked phone photo of a form: straightened, and its 13 blanks found', async () => {
     await openForm('form-photo.png', 'blanks found');
     assert.match(await summary(), /13 blanks found · straightened 1\.2°/);
+    assert.deepEqual((await labels()).slice(9, 11), ['Day', 'Night'], 'each checkbox is labelled by its own caption, on its right');
   });
   await step('loose answers land in order: periods and lines move on, a dash skips, x ticks', async () => {
     await page.uncheck('#use-details');
@@ -115,6 +123,8 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   await step('the same form as a PDF: its own page is kept, and the same 13 blanks are found', async () => {
     await openForm('form.pdf', 'form.pdf');
     assert.match(await summary(), /13 blanks found/);
+    const [day, night] = (await labels()).slice(9, 11);
+    assert.ok((day === 'Day' || nothingOf(day, ['Night'])) && (night === 'Night' || nothingOf(night, ['Day'])), 'the checkboxes\' captions: ' + JSON.stringify([day, night]));
     await typeAnswers(ANSWERS);
     assert.deepEqual(await values(), expected);
     const editable = await save('#pdf-edit', 'filled-from-pdf.pdf');
@@ -193,16 +203,25 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     const columns = await save('#csv-blank', 'columns.csv');
     assert.equal(lib.parseCsv(fs.readFileSync(columns, 'utf8'))[0].length, 13);
     const csv = path.join(scratch, 'rows.csv');
-    fs.writeFileSync(csv, '1,#4,blank 5,Color\r\nLee Doe,Ventilator,VNT-1001,blue\r\n"Roe, Jane",Oximeter,OX-2002,\r\nSam Poe,Nebulizer,NB-3003,red\r\n');
+    fs.writeFileSync(csv, '1,#4,blank 5,Color,Day\r\nLee Doe,Ventilator,VNT-1001,blue,x\r\n"Roe, Jane",Oximeter,OX-2002,,\r\nSam Poe,Nebulizer,NB-3003,red,\r\n');
     await page.setInputFiles('#csv-file', csv);
     await page.waitForSelector('#merge-go');
     const listing = await page.locator('.columns').innerText();
     assert.match(listing, /Color → matches no blank/); assert.match(listing, /#4 → blank 4/);
+    // The column "Day" goes to the box beside "Day", or to no box where this device's drawing of the PDF leaves that
+    // box unclear; never to the Night box.
+    const day = (await labels())[9] === 'Day';
+    assert.match(listing, day ? /Day → blank 10 \(Day\)/ : /Day → matches no blank/, 'the column "Day": ' + JSON.stringify(listing));
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#merge-go')]);
     const merged = path.join(scratch, 'merged.pdf'); await download.saveAs(merged);
     assert.equal((await PDFDocument.load(fs.readFileSync(merged))).getPageCount(), 3);
     const text = pdfText(merged);
     for (const word of ['Lee Doe', 'Roe, Jane', 'Sam Poe', 'VNT-1001', 'OX-2002', 'NB-3003']) assert.ok(text.includes(word), word + ' in the merged PDF');
+    // The first copy (its row says "x" under Day) has its Day box ticked, and not its Night box; the others neither.
+    // With the Day box unclear, no copy has a box ticked.
+    const shift = text.split('\f').map(sheet => sheet.split('\n').find(line => /Day/.test(line) && /Night/.test(line)) || '');
+    if (day) assert.match(shift[0], /X\s*Day\s+Night/, 'copy 1: ' + JSON.stringify(shift[0]));
+    for (const line of shift.slice(day ? 1 : 0, 3)) assert.doesNotMatch(line, /X/, 'a copy with no box to tick: ' + JSON.stringify(line));
     assert.equal((await fieldsOf(merged)).length, 0, 'merged copies are print-ready');
     await shot('form-6-merge');
   });
@@ -226,6 +245,39 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     }
     assert.ok(pdfText(path.join(scratch, 'long-print.pdf')).split('\f')[0].includes('Jane Roe'), 'the answer is on page 1');
   });
+  await step('a form remembered by an earlier version keeps its labels but says so, until its blanks are found again', async () => {
+    // What 2.2.0 remembered for the invented photo: the same blanks, the Day box called "shift" and the Night box "Day",
+    // and no mark saying how they were named.
+    await openForm('form-photo.png', 'remembered from last time');
+    const hash = (await page.locator('.prints dd').first().innerText()).trim();
+    await page.evaluate(hash => { const key = 'ff:template:' + hash, saved = JSON.parse(localStorage.getItem(key)); delete saved.labels; saved.blanks[9].label = 'shift'; saved.blanks[10].label = 'Day'; localStorage.setItem(key, JSON.stringify(saved)); }, hash);
+    await openForm('form-photo.png', 'remembered from last time');
+    assert.match(await page.locator('.note').first().innerText(), /remembered by an earlier version/);
+    assert.deepEqual((await labels()).slice(9, 11), ['shift', 'Day'], 'its old labels, as they were');
+    await page.click('#refind');
+    await page.waitForFunction(() => !document.querySelector('.busy') && /13 blanks found/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 120000 });
+    assert.deepEqual((await labels()).slice(9, 11), ['Day', 'Night'], 'found again: named again');
+    assert.equal(await page.locator('.note', { hasText: 'earlier version' }).count(), 0, 'and the note is gone');
+    await openForm('form-photo.png', 'remembered from last time');
+    assert.equal(await page.locator('.note', { hasText: 'earlier version' }).count(), 0, 'remembered by this version: no note');
+  });
+  await step('the checkbox sheet: a caption on either side, Yes/No pairs both ways round, and a box that cannot be told shown as unclear', async () => {
+    await openForm('checkboxes.png', 'blanks found');
+    assert.match(await summary(), /11 blanks found/);
+    assert.deepEqual(await labels(), ['Name', 'Yes', 'Yes', 'Yes', 'No', 'Yes', 'No', 'I agree to the house rules', 'I have read the notice', 'unclear: “Maybe”?', 'unclear: “Maybe”?']);
+    assert.equal(await page.locator('.list .label.unsure').count(), 2);
+  });
+  await step('the checkbox sheet as the PDF the page opens (drawn by this browser, not poppler): no box gets words that are not its own', async () => {
+    await openForm('checkboxes.pdf', 'blanks found');
+    const got = await labels(), want = ['Name', 'Yes', 'Yes', 'Yes', 'No', 'Yes', 'No', 'I agree to the house rules', 'I have read the notice'];
+    assert.equal(got.length, 11, JSON.stringify(got));
+    // Each box has its own caption, or none ("checkbox") where the reader lost it, or is unclear: never another's words.
+    // The last two ("Maybe", as near one box as the next) are never called by a caption.
+    assert.equal(got[0], 'Name', JSON.stringify(got));
+    got.slice(1, 9).forEach((label, index) => assert.ok(label === want[index + 1] || nothingOf(label, want.filter(other => other !== want[index + 1])), 'blank ' + (index + 2) + ': ' + JSON.stringify(got)));
+    got.slice(9).forEach((label, index) => assert.ok(nothingOf(label, want), 'blank ' + (index + 10) + ': ' + JSON.stringify(got)));
+    assert.ok(got.slice(0, 9).filter((label, index) => label === want[index]).length >= 8, 'at least 8 of the 9 captions read: ' + JSON.stringify(got));
+  });
   let templateFile;
   await step('a template file: the photo form\'s blanks and its page picture, in plain JSON another program can read', async () => {
     await openForm('form-photo.png', 'remembered from last time');
@@ -233,6 +285,32 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     const template = lib.readTemplate(fs.readFileSync(templateFile, 'utf8'));
     assert.equal(template.blanks.length, 13); assert.equal(template.form.type, 'image');
     assert.match(template.pages[0].image, /^data:image\/jpeg;base64,/);
+    assert.equal(JSON.parse(fs.readFileSync(templateFile, 'utf8')).labels, 2, 'the file says its checkboxes were named this version\'s way');
+  });
+  let oldTemplateFile;
+  await step('a template file saved by an earlier version says so as it is put in place; an offer made for another file\'s template lapses when a form is opened', async () => {
+    // What 2.2.0 saved for the invented photo: the same blanks, the Day box called "shift" and the Night box "[] Day",
+    // and no mark saying how they were named.
+    const old = JSON.parse(fs.readFileSync(templateFile, 'utf8')); delete old.labels; old.blanks[9].label = 'shift'; old.blanks[10].label = '[] Day';
+    oldTemplateFile = path.join(scratch, 'template-2.2.0.json'); fs.writeFileSync(oldTemplateFile, JSON.stringify(old));
+    await page.setInputFiles('#template-file', oldTemplateFile);
+    await page.waitForFunction(() => /blanks are in place/.test(document.querySelector('.note')?.textContent || ''), null, { timeout: 30000 });
+    assert.match(await page.locator('.note').first().innerText(), /saved by an earlier version.*Find the blanks again/);
+    assert.deepEqual((await labels()).slice(9, 11), ['shift', '[] Day'], 'its old labels, as they were');
+    // The same file as if made for another file of the same size, without its picture: offered, not put in place.
+    const other = { ...old, form: { ...old.form, sha256: 'f'.repeat(64) }, pages: old.pages.map(({ image, ...rest }) => rest) };
+    const otherFile = path.join(scratch, 'template-other.json'); fs.writeFileSync(otherFile, JSON.stringify(other));
+    await page.setInputFiles('#template-file', otherFile);
+    await page.waitForSelector('#template-anyway');
+    // Opening the photo again brings up its own note (remembered as 2.2.0 named it); the old offer must not come with it.
+    await openForm('form-photo.png', 'remembered from last time');
+    assert.match(await page.locator('.note').first().innerText(), /remembered by an earlier version/);
+    assert.equal(await page.locator('#template-anyway').count(), 0, 'the offer lapsed');
+    // This version's template file puts this version's labels back, with no note about an earlier version.
+    await page.setInputFiles('#template-file', templateFile);
+    await page.waitForFunction(() => /blanks are in place/.test(document.querySelector('.note')?.textContent || ''), null, { timeout: 30000 });
+    assert.doesNotMatch(await page.locator('.note').first().innerText(), /earlier version/);
+    assert.deepEqual((await labels()).slice(9, 11), ['Day', 'Night']);
   });
   await step('offline: with no connection the page opens again and still finds a new form\'s blanks', async () => {
     // The server is taken away, so nothing can be fetched; the page has to come from what it kept. (The browser's
@@ -256,6 +334,12 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.uncheck('#use-details'); await typeAnswers(ANSWERS);
     assert.deepEqual(await values(), expected);
     assert.equal((await fieldsOf(await save('#pdf-edit', 'from-template.pdf'))).length, 13);
+  });
+  await step('on a new device, a template file saved by an earlier version opens the form and says how to name its checkboxes again', async () => {
+    await page.goto(origin);
+    await page.setInputFiles('#template-file', oldTemplateFile);
+    await page.waitForFunction(() => /template file itself/.test(document.querySelector('.note')?.textContent || ''), null, { timeout: 30000 });
+    assert.match(await page.locator('.note').first().innerText(), /saved by an earlier version.*open the original form/);
   });
   await step('a template the command line made from a PDF\'s own fields (in points) lands on the page drawn in pixels', async () => {
     const made = path.join(scratch, 'fields.json');
