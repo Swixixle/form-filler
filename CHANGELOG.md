@@ -8,8 +8,10 @@
 - **Never a guess.** When the words that belong to a box cannot be told, the box is listed as unclear, with the words
   it might be, and no CSV column goes to it. That covers a word as near one box as the next, a note, number, code or
   price beside a caption ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, a caption that may run on to the
-  next line, and headings over boxes that have words beside them too. The rule leans to unclear: some captions a
-  person could tell are left unclear as well.
+  next line, headings over boxes that have words beside them too, and a lone box between a question and another
+  field's prompt or a note ("Member? [ ] Number: ___", "Paid? [ ] (optional)"). The rule leans to unclear: some
+  captions a person could tell are left unclear as well. Notes, prices and codes it does not recognise ("Adult
+  12pp", "Daily DY") can still end up in a box's name; the tests list them as known limits.
 - **Forms and templates from an earlier version** keep their blanks and old labels, so blanks added or removed by hand
   are not lost, and say so; *Find the blanks again* names their checkboxes anew.
 - A CSV column named like both a checkbox and the line its caption names ("[ ] Other: ____") goes to the line, as
