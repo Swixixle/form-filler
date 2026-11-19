@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { findBlanks, findOptions, nameOptions, labelFor, skewOf, rotate } from '../src/lib/blanks.js';
 import { splitAnswers, placeAnswers } from '../src/lib/answers.js';
+import * as drawn from './drawn.js';
 
 // Invented forms drawn by scripts/make-fixtures.py. Synthetic test material.
 const grayOf = name => { const png = PNG.sync.read(readFileSync(new URL('./fixtures/' + name, import.meta.url))), gray = new Uint8Array(png.width * png.height);
@@ -80,16 +81,89 @@ test('an option button is called by the words after it, and its set by the quest
   assert.equal(labelFor(sets[3], words, 49), 'Parking needed?'); assert.equal(labelFor(sets[4], words, 49), 'Wheelchair access?');
 });
 
-// KNOWN DEFECT 11 (docs/INVENTORY.md): in a table whose rows are about 61 px high at the page's working width (22 pt
-// on a Letter page), the upright strokes of the header's letters pass for cell walls, so the header cell is split and
-// parts of it are offered as blanks. A blank that is not there shifts every answer typed after it by one. This test
-// says what should happen; it fails today, and node:test reports it as "todo" until the finder is fixed.
-test('a table with tight rows (61 px): its six empty cells are the blanks, and nothing in its header row', { todo: 'known defect 11: letters in a tight header row are taken for cell walls' }, () => {
+// Defect 11 (docs/INVENTORY.md), fixed in 2.3.1: in a table whose rows are about 61 px high at the page's working
+// width (22 pt on a Letter page), the upright strokes of the header's letters passed for cell walls, so the header
+// cell was split and parts of it were offered as blanks. A blank that is not there shifts every answer typed after it
+// by one; a real cell lost shifts them the other way, so the tests below hold both.
+test('a table with tight rows (61 px): its six empty cells are the blanks, and nothing in its header row', () => {
   // tests/fixtures/tight-table.png (scripts/make-tight-table-fixture.mjs): Visitor | Room | Badge over two empty rows.
   const { gray, width, height } = grayOf('tight-table.png');
   const blanks = findBlanks(gray, width, height), headerBottom = 370;
   assert.deepEqual(blanks.filter(blank => blank.y0 < headerBottom).map(blank => [blank.kind, blank.x0, blank.y0, blank.x1, blank.y1]), [], 'no blank in the header row');
   assert.deepEqual(blanks.map(blank => blank.kind), ['box', 'box', 'box', 'box', 'box', 'box']);
+});
+
+// The same in tables drawn in code (tests/drawn.js): block capitals, 3 px rules.
+const COLUMNS = [200, 633, 1066, 1497];
+function headed(rowPx, { short = 0, under = null } = {}) {
+  const p = drawn.page(), ys = [300, 300 + rowPx, 300 + 2 * rowPx, 300 + 3 * rowPx];
+  drawn.table(p, COLUMNS, ys, { short });
+  ['VISITOR', 'ROOM', 'BADGE'].forEach((text, index) => under === null ? drawn.inCell(p, text, COLUMNS[index], ys[0], ys[1]) : drawn.word(p, text, COLUMNS[index] + 17, ys[0] + 3 + under));
+  const blanks = findBlanks(p.gray, p.width, p.height);
+  return { blanks, inHeader: blanks.filter(blank => blank.y0 < ys[1] + 3), cells: ys.slice(1, 3).flatMap(top => COLUMNS.slice(0, 3).map((x, index) => [x, top, COLUMNS[index + 1], top + rowPx])) };
+}
+const inside = (blank, [x0, y0, x1, y1]) => blank.x0 > x0 && blank.x1 < x1 && blank.y0 > y0 && blank.y1 < y1 && (blank.x1 - blank.x0) * (blank.y1 - blank.y0) > (x1 - x0) * (y1 - y0) * 0.6;
+
+test('tables drawn with tight rows (50 and 61 px) and roomy ones (100 px): each empty cell is one blank, and nothing in the header row', () => {
+  for (const rowPx of [50, 61, 100]) {
+    const { blanks, inHeader, cells } = headed(rowPx);
+    assert.deepEqual(inHeader, [], rowPx + ' px: no blank in the header row');
+    assert.equal(blanks.length, 6, rowPx + ' px: ' + JSON.stringify(blanks));
+    cells.forEach((cell, index) => assert.ok(inside(blanks[index], cell), rowPx + ' px, cell ' + (index + 1) + ': ' + JSON.stringify(blanks[index])));
+  }
+});
+
+test('walls drawn short of the rules, by 1, 3 or 6 px, are still walls: no cell is lost', () => {
+  for (const short of [1, 3, 6]) {
+    const { blanks, inHeader, cells } = headed(61, { short });
+    assert.deepEqual(inHeader, [], short + ' px short: no blank in the header row');
+    assert.equal(blanks.length, 6, short + ' px short: ' + JSON.stringify(blanks));
+    cells.forEach((cell, index) => assert.ok(inside(blanks[index], cell), short + ' px short, cell ' + (index + 1)));
+  }
+});
+
+test('a tight box with a unit at its right ("WEIGHT ___ KG"): one blank, between the label and the unit', () => {
+  const p = drawn.page(); drawn.table(p, [200, 1000], [300, 361]);
+  const label = drawn.inCell(p, 'WEIGHT', 200, 300, 361), unit = drawn.inCell(p, 'KG', 1000, 300, 361, { right: true });
+  const blanks = findBlanks(p.gray, p.width, p.height);
+  assert.equal(blanks.length, 1, JSON.stringify(blanks));
+  assert.ok(blanks[0].x0 >= label.x1 && blanks[0].x1 < unit.x0 && blanks[0].x1 - blanks[0].x0 > 500, JSON.stringify(blanks[0]));
+});
+
+test('two fields in one tight box ("SIGNED ___ DATE ___"): two blanks, each after its own label', () => {
+  const p = drawn.page(); drawn.table(p, [200, 1500], [300, 361]);
+  const signed = drawn.inCell(p, 'SIGNED', 200, 300, 361), date = drawn.inCell(p, 'DATE', 883, 300, 361);
+  const blanks = findBlanks(p.gray, p.width, p.height);
+  assert.equal(blanks.length, 2, JSON.stringify(blanks));
+  assert.ok(blanks[0].x0 >= signed.x1 && blanks[0].x1 < date.x0, 'the first after SIGNED: ' + JSON.stringify(blanks[0]));
+  assert.ok(blanks[1].x0 >= date.x1 && blanks[1].x1 < 1500, 'the second after DATE: ' + JSON.stringify(blanks[1]));
+});
+
+test('a price column with "$" in every body cell (61 px rows): the four cells are the blanks, the header is not', () => {
+  const p = drawn.page(), xs = [200, 800, 1300], ys = [300, 361, 422, 483]; drawn.table(p, xs, ys);
+  drawn.inCell(p, 'ITEM', xs[0], ys[0], ys[1]); drawn.inCell(p, 'PRICE', xs[1], ys[0], ys[1]);
+  for (const row of [1, 2]) drawn.inCell(p, '$', xs[1], ys[row], ys[row + 1]);
+  const blanks = findBlanks(p.gray, p.width, p.height);
+  assert.equal(blanks.length, 4, JSON.stringify(blanks));
+  assert.ok(blanks.every(blank => blank.y0 > ys[1]), 'none in the header row');
+});
+
+// Known limits of the fix: what should happen, reported as "todo" while it does not.
+test('known limit: header letters within 3 px of a rule, in rows of 36 to 44 px, still split their cells', { todo: 'a stroke that close to a rule cannot be told from a wall drawn or broken that short' }, () => {
+  for (const rowPx of [36, 40, 44]) assert.deepEqual(headed(rowPx, { under: 2 }).inHeader, [], rowPx + ' px rows');
+});
+
+test('known limit: a labelled field over an empty box ("HOLDER ___" over an empty row) is taken for a table\'s header', { todo: 'a header cannot be told from a labelled field over another; 2.3.0 did the same in roomy rows' }, () => {
+  for (const rowPx of [61, 100]) {
+    const p = drawn.page(); drawn.table(p, [200, 900], [300, 300 + rowPx, 300 + 2 * rowPx]); drawn.inCell(p, 'HOLDER', 200, 300, 300 + rowPx);
+    assert.equal(findBlanks(p.gray, p.width, p.height).length, 2, rowPx + ' px rows: the room after HOLDER, and the row below');
+  }
+});
+
+test('known limit: a roomy box with a unit at its right ("WEIGHT ___ KG", 100 px) gets no blank', { todo: 'the unit\'s ink runs to the right wall, so no room is left after the label; 2.3.0 did the same' }, () => {
+  const p = drawn.page(); drawn.table(p, [200, 1000], [300, 400]);
+  drawn.inCell(p, 'WEIGHT', 200, 300, 400); drawn.inCell(p, 'KG', 1000, 300, 400, { right: true });
+  assert.equal(findBlanks(p.gray, p.width, p.height).length, 1);
 });
 
 test('answers: periods and new lines move on, a dash or extra period leaves a blank empty, a number jumps', () => {

@@ -8,7 +8,7 @@ visit.
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
 **Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; this README
-describes 2.3.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+describes 2.3.1, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 Everything below describes what works today, except the section headed [Roadmap](#roadmap-planned-not-built), which
 is planned and not built.
@@ -124,8 +124,9 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
 With `--handwriting` the walk also reads two synthetic handwritten pages (34 steps; it downloads the 64 MB model). The
-library and the command line have 174 unit tests (`npm test`); 30 of them are known limits of the checkbox labels,
-reported as "todo", and 9 of those are layouts where a box still gets words that are not its caption.
+library and the command line have 183 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
+30 of the checkbox labels (9 of those are layouts where a box still gets words that are not its caption), and 3 of
+the blank finder in tables.
 
 Not tested: a real iPhone or a real Safari (Playwright's WebKit build stands in for them), real handwriting, and real
 forms.
@@ -203,10 +204,16 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
   characters wrong, measured 2026-11-17; an earlier run measured 1.4%). The larger reader is not known to be better: it
   got the date wrong too (11.6%). A person's own hand will do worse, joined-up writing worst. Lines must be written
   apart from each other; two lines that touch are split at their thinnest row, which can cut a tall letter.
-- **Tables with tight rows can gain blanks that are not there.** In a table whose rows are under about 25 pt high,
-  the strokes of the header's letters can be taken for cell walls, and parts of the header row are offered as blanks.
-  Every answer typed in order after such a blank lands one blank late. Check a table's blank numbers before typing,
-  or put answers there by number ("7) Lee Doe"). A known defect, to be fixed next.
+- **A table can still gain or lose a blank.**
+  - A header cell in small print (7 to 9 pt), or holding a short word such as "ID" or "No.", can be offered as a
+    blank.
+  - In rows under about 25 pt, a header's letters within about 1 pt of a rule (or blurred into one on a photo) can
+    still split the header cell into blanks.
+  - A photographed table can lose cells, and on Legal paper rows of 14 pt or less are not found.
+  - A labelled field over an empty box ("Holder: ___") is taken for a table's header.
+
+  A blank that is not there puts every later answer one blank late; a lost one, one blank early. Check a table's
+  blank numbers before typing, or put answers there by number ("7) Lee Doe").
 - **A photo taken at an angle** (not just turned) is straightened for rotation only, not perspective.
 - **Dotted-line blanks and blanks with no line or box**, such as a gap after a colon: add them by hand.
 - **Long PDFs**: only the first 10 pages are shown and filled; the rest are kept as they are. A locked PDF is filled as
@@ -260,8 +267,8 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
   and leaves the submit click to you.
 
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
-browsers and long PDFs are in 2.2.0, and checkbox labels in 2.3.0; the Mac app, vault, archive and backups are not
-started.
+browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, and tables with tight rows in 2.3.1; the Mac app, vault,
+archive and backups are not started.
 
 ## Licence
 

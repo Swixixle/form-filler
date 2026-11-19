@@ -1,5 +1,21 @@
 # Changes
 
+## 2.3.1 (2026-11-19)
+
+- **Tables with tight rows.** In rows under about 25 pt, the upright strokes of a header's letters passed for cell
+  walls, so the header cell was split and its pieces were offered as blanks. Every answer typed after them landed one
+  blank late. Now a piece beside a stroke that is surely a letter is not offered. The rows are still cut where they
+  were, so every cell 2.2.0 and 2.3.0 found is still found:
+  - walls drawn short of the rules, broken or rounded;
+  - a box with a unit at its right ("Weight ___ kg");
+  - two fields in one box ("Signed ___ Date ___").
+
+  On 360 invented tables the pieces fall from 430 to 12, with no cell lost and no blank added.
+- **Still left.** A letter within about 1 pt of a rule can still split its cell, more often on photos. A labelled
+  field over an empty box ("Holder: ___") is taken for a table's header, as it already was in roomy rows. The
+  measure found four older defects, logged in `docs/INVENTORY.md` (12 to 15). The worst is a header cell in small
+  print or with a short word ("ID", "No."), which is offered as a blank.
+
 ## 2.3.0 (2026-11-19)
 
 - **Checkbox labels.** A checkbox is labelled by its own caption, on its right ("[ ] Yes") or its left ("Yes [ ]"),

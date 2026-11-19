@@ -3,7 +3,8 @@
 Phase 1 of the build plan ([BUILD_PLAN.md](BUILD_PLAN.md)). Written 2026-11-17 against `main` at `2747d0b` (version 2.1.0).
 No feature code was changed to produce this.
 
-**Since it was written:** in 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
+**Since it was written:** in 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
+measuring that fix, are logged. In 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
 on the same day (branches `phase-1-inventory` and `phase-2`): defects 1, 2 and 3 and
 the unescaped signature in defect 8 are fixed, each with a test that failed before; defect 9's first half is fixed
 (Playwright is declared); defect 10 is fixed (MIT licence). What changed and how it was checked is in
@@ -193,8 +194,48 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
     strokes of a header's letters are long enough to pass for cell walls. The header cell is split, and parts of it
     are offered as blanks. On the invented `tests/fixtures/tight-table.png` the finder returns 8 blanks where there
     are 6. Every answer typed in order after such a blank lands one blank late. Rows of 70 px, like the invented
-    equipment form's, escape it by a few pixels. **[V]** A test that says what should happen is in
-    `tests/blanks.test.js`, marked as known-failing ("todo") until the finder is fixed.
+    equipment form's, escape it by a few pixels. **[V]**
+
+    **Fixed in 2.3.1.** The rows are cut where they were, so no cell that 2.3.0 found is lost, but beside a stroke that
+    is surely a letter (more than 3 px clear of both rules, with other ink within 9 px of it) the pieces are judged
+    again: a header's piece over an empty cell of its column is dropped, a piece among a word's letters is dropped, and
+    the room after a word starts where the word ends. It was measured cell by cell against 2.3.0. The measure covered
+    465 invented pages: the fixtures, 360 tables with rows of 14 to 40 pt on Letter, A4 and Legal paper in six fonts,
+    and 90 photo-like copies. It also covered a held-out set, two stress sets, and the pages of two attackers. The
+    attackers drew units at the right of a box ("Weight ___ kg"), two fields in one box, rounded and comb boxes, walls
+    drawn short of the rules, broken walls and timesheet ticks. On all of them, no cell is lost that 2.3.0 found, and
+    no blank is offered that 2.3.0 did not offer. The pieces among letters fall from 430 to 12 on the 360 tables and
+    from 113 to 56 on the photos. **[V]**
+
+    Left as they were:
+    - a letter within 3 px (about 1 pt) of a rule, or blurred into one on a photo;
+    - a lone stroke with nothing beside it;
+    - a header over a column of row labels.
+
+    One case now behaves as roomy rows always did: a labelled field over an empty box ("Holder: ___" over an empty row)
+    is taken for a table's header, and its blank is dropped. On the fix's own probe page that cost 11 of 32 places.
+    **[V]** The test in `tests/blanks.test.js` passes now, beside tables drawn in code, and three of these limits are
+    tests marked "todo".
+
+12. **A header cell with small or short words is offered as a blank** (found 2026-11-19, measuring defect 11's fix;
+    2.3.0 and 2.3.1 alike). Its words have less ink than the finder's limit for a scan's specks, so the cell is taken
+    for an empty one: 7 to 9 pt print, or a word like "ID", "No." or "Qty". On the measure's 360 invented tables, 562
+    of 1,410 header cells are offered as blanks this way; of the 7 pt headers on Letter paper, 44 of 65. Every answer
+    typed in order after one lands one blank late. **[V]**
+13. **Photographed tables lose cells** (found the same way; both versions). On the measure's 90 photo-like copies
+    (turned, shaded and softened, then straightened as the page does), 270 of 834 empty cells get no blank. **[V]** the
+    count; the cause is not looked into yet.
+14. **Tight rows on Legal paper are not found** (both versions). The finder skips a row whose inside is under 0.6 of
+    its text unit, and the unit grows with the page's height: on a Legal page it is 62 px, so a row must be over 37 px
+    (about 13.4 pt) inside. On the measure, tables with 14 pt rows on Legal paper lose 76 empty cells, and one with
+    16 pt rows 2. **[V]**
+15. **Seen on single invented pages, not measured at scale** (both versions). Each was seen on one attacker's page, the
+    same in 2.3.0 and 2.3.1. **[V]**
+    - A header row of white words on a dark fill: no cell of the table is found.
+    - A section row across a table, where the column walls stop at it, is offered as a blank.
+    - In a tight cell, the space right of a checkbox ("Agreed [ ]") is offered as a blank.
+    - A roomy box with a unit at its right ("Weight ___ kg") gets no blank: the unit's ink runs to the wall.
+    - 6 pt checkboxes on an A4 checklist are not found.
 
 Smaller notes: the repository has no git tags, so 2.0.0 and 2.1.0 exist only in `CHANGELOG.md` and `package.json`.
 ## The patches
