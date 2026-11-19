@@ -124,8 +124,8 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
 With `--handwriting` the walk also reads two synthetic handwritten pages (34 steps; it downloads the 64 MB model). The
-library and the command line have 156 unit tests (`npm test`); 18 of them are known limits of the checkbox labels,
-reported as "todo".
+library and the command line have 174 unit tests (`npm test`); 30 of them are known limits of the checkbox labels,
+reported as "todo", and 9 of those are layouts where a box still gets words that are not its caption.
 
 Not tested: a real iPhone or a real Safari (Playwright's WebKit build stands in for them), real handwriting, and real
 forms.
@@ -191,9 +191,10 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
 - **Labels.** Cells under a table's header row are not labelled yet: the list calls them "blank". A checkbox is
   left unclear whenever its caption is in doubt, and the rule leans to doubt: a caption with a note, number, code or
   price beside it ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, and a caption that wraps to the next line
-  are left unclear even when a person could tell. The reader can also misread a caption's own letters ("Adutt").
-  Labels decide which of your details fill a blank and which CSV column goes where, so check the list before relying
-  on them.
+  are left unclear even when a person could tell. A note, price or code the rule does not recognise can still end up
+  in a box's name ("Employed answer 5a", "Adult 12pp", "Daily DY", "Oui précisez"), and the reader can misread a caption's
+  own letters ("Adutt"). Labels decide which of your details fill a blank and which CSV column goes where, so check
+  the list before relying on them.
 - **Blank numbers sit over the start of a label** on a photographed form ("Na… 1" above). The list under *Your
   answers* gives each number with its whole label.
 - **Round option buttons drawn on a page** (not a PDF's own radio buttons, which work) are not found by the page yet.

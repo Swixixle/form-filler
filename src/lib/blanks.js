@@ -888,12 +888,17 @@ function captions(blanks, words, unit) {
 
     // A box alone: its caption is the phrase beside it; with words on both sides that ask nothing (read or not) it is
     // unsure. A list's number alone is none; a question or a field's prompt is its caption only when nothing else is
-    // beside it and no phrase of its own is over it. It is unsure when its phrase is about as near another box, is an
-    // answer of two words or more after a question or a prompt of two words or more, has a capitalised word after its
-    // first, or has no letter (a price or a number alone may be an answer code).
+    // beside it and no phrase of its own is over it: after a question, a box whose right holds another question, another
+    // field's prompt or a note in brackets is unsure ("Member? [ ] Number: ___", "Paid? [ ] (optional)"). It is unsure
+    // when its phrase is about as near another box, is an answer of two words or more after a question or a prompt of
+    // two words or more, has a capitalised word after its first, or has no letter (a price or a number alone may be an
+    // answer code).
     function lone(box) {
       const { left, right } = box, beside = found => Boolean(found) && !asking(found);
-      if (beside(left) && beside(right)) { out[box.index] = { unsure: readings(box, [box]) }; return; }
+      const listed = found => found.phrase.words.length === 1 && LIST.test(found.phrase.words[0].text);
+      const note = found => /^\(/.test(found.phrase.words[0].text) && /\)$/.test(found.phrase.words[found.phrase.words.length - 1].text);
+      const crowded = left && right && !listed(left) && !listed(right) && !said(left) && (!said(right) || note(right));
+      if ((beside(left) && beside(right)) || crowded) { out[box.index] = { unsure: readings(box, [box]) }; return; }
       const found = said(right) ? right : said(left) ? left : right || left, words = found?.phrase.words || [];
       if (!found || (words.length === 1 && LIST.test(words[0].text))) { out[box.index] = {}; return; }
       if (!said(found) && box.head) { out[box.index] = { unsure: [say(words), say(box.head.words)] }; return; }

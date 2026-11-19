@@ -30,6 +30,8 @@ const at = (text, x, y, { h = UNIT, char = CHAR } = {}) => text.split(' ').map(w
 // An input with more words; two inputs as one page.
 const plus = (input, ...more) => ({ blanks: input.blanks, words: [...input.words, ...more.flat()] });
 const both = (a, b) => ({ blanks: [...a.blanks, ...b.blanks], words: [...a.words, ...b.words] });
+const down = (input, dy, dx = 0) => ({ blanks: input.blanks.map(b => ({ ...b, x0: b.x0 + dx, x1: b.x1 + dx, y0: b.y0 + dy, y1: b.y1 + dy })),
+  words: input.words.map(w => ({ ...w, bbox: { x0: w.bbox.x0 + dx, x1: w.bbox.x1 + dx, y0: w.bbox.y0 + dy, y1: w.bbox.y1 + dy } })) });
 // The page turned a little, as on a phone photo: every point moved down by (x - 100) * tan(degrees).
 const turn = (input, degrees) => {
   const k = Math.tan(degrees * Math.PI / 180), d = x => Math.round((x - 100) * k);
@@ -133,6 +135,14 @@ export const ROWS = [
   ['headings centred over cells "[ ] n" (the box 9 px off its heading\'s middle): each box unsure', headed(['Good', 'Fair', 'Poor'], [200, 320, 440], { off: 9, beside: ['1', '2', '3'] }), [{ unsure: ['1', 'Good'] }, { unsure: ['2', 'Fair'] }, { unsure: ['3', 'Poor'] }]],
   ['a list number before the box, the caption wrapping to the margin: unsure, never its first line only', plus(row('1.', 14, '[]', 10, ...words('I consent to my child being photographed during school')), at('activities and events.', 100, 134)), [{ unsure: ['I consent to my child being photographed during school', 'I consent to my child being photographed during school activities and events.'] }]],
   ['a note after a plain space with no instruction word ("Yes give details below"): more words than the others, unsure', row('[]', 12, 'Yes', 10, 'give', 10, 'details', 10, 'below', 40, '[]', 12, 'No'), [{ unsure: ['Yes', 'Yes give details below'] }, 'No']],
+  // From the last check: two pairs on one line, a wrap under the first column, and lone boxes after their questions.
+  ['two questions on one line, each with its own pair', row('Smoke?', 20, '[]', 12, 'Yes', 40, '[]', 12, 'No', 40, 'Pets?', 20, '[]', 12, 'Yes', 40, '[]', 12, 'No'), ['Yes', 'No', 'Yes', 'No']],
+  ['two columns, the first caption wrapping under itself: unsure, never its first line only', plus(row('[]', 12, ...words('Sports and outdoor'), 60, '[]', 12, ...words('Music and singing')), at('activities', 140, 134)), [{ unsure: ['Sports and outdoor', 'Sports and outdoor activities'] }, { unsure: ['Music and', 'Music and singing'] }]],
+  ['a lone box after its question: the question', row('Do', 10, 'you', 10, 'need', 10, 'a', 10, 'ramp?', 14, '[]'), ['Do you need a ramp?']],
+  ['a lone box after its question, another field beyond reach on its line', row('Member?', 14, '[]', 140, 'Number:', 10, '___'), ['Member?', 'Number']],
+  // A question, its lone box, then words on its right that are another field's prompt or a note: unclear, never the prompt.
+  ['a question, its lone box, then another field\'s one-word prompt: unclear, never the prompt', row('Member?', 14, '[]', 30, 'Number:', 10, '___'), [{ unsure: ['Member?', 'Number'] }, 'Number']],
+  ['a question, its lone box, then a one-word note in brackets: unclear', row('Smoker?', 14, '[]', 12, '(optional)'), [{ unsure: ['Smoker?', '(optional)'] }]],
 ];
 
 // Clear captions the rule leaves unclear (a cost, never a wrong label), with what each should give.
@@ -151,4 +161,17 @@ export const LIMITS = [
   ['a scale: words at its ends, numbers beside the boxes', row('Poor', 20, '1', 4, '[]', 30, '2', 4, '[]', 30, '3', 4, '[]', 20, 'Good'), ['1', '2', '3']],
   ['a caption broken at a joining word is read on into the next row', plus(row('[]', 12, ...words('Use my details for')), at('research purposes only', 140, 134)), ['Use my details for research purposes only']],
   ['units with numbers ("1" is a number here)', row('[]', 12, '500', 10, 'ml', 40, '[]', 12, '1', 10, 'litre', 40, '[]', 12, '2', 10, 'litres'), ['500 ml', '1 litre', '2 litres']],
+  // From the last check. "WRONG today": the rule gives these boxes words that are not their caption.
+  ['a question, its lone box, then another field\'s one-word prompt', row('Member?', 14, '[]', 30, 'Number:', 10, '___'), ['Member?', 'Number']],
+  ['a question, its lone box, then a one-word note in brackets', row('Smoker?', 14, '[]', 12, '(optional)'), ['Smoker?']],
+  ['WRONG today: a note after a plain space whose words are not on the instruction list ("answer 5a")', row('[]', 12, 'Employed', 10, 'answer', 10, '5a', 40, '[]', 12, 'Self-employed', 10, 'answer', 10, '5b'), ['Employed', 'Self-employed']],
+  ['WRONG today: a lone box, a note after a plain space ("call ahead")', row('[]', 12, 'Wheelchair', 10, 'user', 10, 'call', 10, 'ahead'), ['Wheelchair user']],
+  ['WRONG today: a note after "yes" and "no" in another language', row('[]', 12, 'Oui', 10, 'précisez', 40, '[]', 12, 'Non', 10, 'précisez'), ['Oui', 'Non']],
+  ['WRONG today: a page reference after each caption', row('[]', 12, 'Employed', 10, 'p.4', 40, '[]', 12, 'Retired', 10, 'p.5', 40, '[]', 12, 'Student', 10, 'p.6'), ['Employed', 'Retired', 'Student']],
+  ['WRONG today: prices the price pattern misses ("12pp")', row('[]', 12, 'Adult', 10, '12pp', 40, '[]', 12, 'Child', 10, '6pp', 40, '[]', 12, 'Family', 10, '30pp'), ['Adult', 'Child', 'Family']],
+  ['WRONG today: prices the price pattern misses ("Rs.500")', row('[]', 12, 'Single', 10, 'Rs.500', 40, '[]', 12, 'Couple', 10, 'Rs.800', 40, '[]', 12, 'Family', 10, 'Rs.1000'), ['Single', 'Couple', 'Family']],
+  ['WRONG today: two-letter answer codes after the captions', row('[]', 12, 'Daily', 10, 'DY', 40, '[]', 12, 'Weekly', 10, 'WK', 40, '[]', 12, 'Monthly', 10, 'MO'), ['Daily', 'Weekly', 'Monthly']],
+  ['WRONG today: two columns numbered in the margin, the first caption wrapping back to the margin', plus(row('1.', 14, '[]', 12, ...words('Sports and outdoor'), 60, '[]', 12, ...words('Music and singing')), at('activities', 100, 134)), ['Sports and outdoor activities', 'Music and singing']],
+  ['WRONG today: options typed as running text, the broken caption going on indented past the first box', both(row('[]', 10, 'Radio', 20, '[]', 10, 'Friend', 20, '[]', 10, 'Social'), down(row('media', 20, '[]', 10, 'Other'), 34, 20)), ['Radio', 'Friend', 'Social media', 'Other']],
+  ['two columns, the first caption wrapping under itself', plus(row('[]', 12, ...words('Sports and outdoor'), 60, '[]', 12, ...words('Music and singing')), at('activities', 140, 134)), ['Sports and outdoor activities', 'Music and singing']],
 ];
