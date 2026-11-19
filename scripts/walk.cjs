@@ -63,6 +63,12 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   const fieldsOf = async file => { const doc = await PDFDocument.load(fs.readFileSync(file)); return doc.getForm().getFields().map(field => [field.getName(), field.constructor.name === 'PDFCheckBox' ? field.isChecked() : field.constructor.name === 'PDFDropdown' ? field.getSelected()[0] : field.constructor.name === 'PDFRadioGroup' ? field.getSelected() : field.getText() ?? '']); };
   const summary = () => page.locator('.panel .subtle').first().innerText();
   const labels = () => page.$$eval('.list li .label', spans => spans.map(span => span.textContent));
+  // On a PDF the page reads the words from its own drawing of the page. The invented PDFs name Helvetica without
+  // carrying it, so each device draws them with its own fonts, and a caption can read differently there (on GitHub's
+  // Linux machine "Day" came back "pay"). What must hold everywhere: a box is called by its own caption, by none
+  // ("checkbox"), or is unclear, and then none of the words it might be is another box's caption.
+  const readingsOf = label => [...label.matchAll(/“([^”]*)”/g)].map(match => match[1]);
+  const nothingOf = (label, others) => label === 'checkbox' || (/^unclear: /.test(label) && readingsOf(label).every(reading => !others.includes(reading)));
   const openForm = async (name, done) => { await page.setInputFiles('#form-file', path.join(fixtures, name)); await page.waitForFunction(text => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes(text), done, { timeout: 120000 }); };
   const typeAnswers = async text => { await page.fill('#answers', text); await page.waitForTimeout(100); };
   const expected = ['Jane Roe', '11/13/2026', 'Respiratory Care', 'Ventilator', 'VNT-2219', '1', 'Oximeter', 'OX-77', '2', false, true, 'Return by Friday', 'J. R. Smith'];
@@ -117,7 +123,8 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   await step('the same form as a PDF: its own page is kept, and the same 13 blanks are found', async () => {
     await openForm('form.pdf', 'form.pdf');
     assert.match(await summary(), /13 blanks found/);
-    assert.deepEqual((await labels()).slice(9, 11), ['Day', 'Night'], 'the checkboxes\' captions');
+    const [day, night] = (await labels()).slice(9, 11);
+    assert.ok((day === 'Day' || nothingOf(day, ['Night'])) && (night === 'Night' || nothingOf(night, ['Day'])), 'the checkboxes\' captions: ' + JSON.stringify([day, night]));
     await typeAnswers(ANSWERS);
     assert.deepEqual(await values(), expected);
     const editable = await save('#pdf-edit', 'filled-from-pdf.pdf');
@@ -201,16 +208,20 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.waitForSelector('#merge-go');
     const listing = await page.locator('.columns').innerText();
     assert.match(listing, /Color → matches no blank/); assert.match(listing, /#4 → blank 4/);
-    assert.match(listing, /Day → blank 10 \(Day\)/, 'a column "Day" goes to the box beside "Day"');
+    // The column "Day" goes to the box beside "Day", or to no box where this device's drawing of the PDF leaves that
+    // box unclear; never to the Night box.
+    const day = (await labels())[9] === 'Day';
+    assert.match(listing, day ? /Day → blank 10 \(Day\)/ : /Day → matches no blank/, 'the column "Day": ' + JSON.stringify(listing));
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#merge-go')]);
     const merged = path.join(scratch, 'merged.pdf'); await download.saveAs(merged);
     assert.equal((await PDFDocument.load(fs.readFileSync(merged))).getPageCount(), 3);
     const text = pdfText(merged);
     for (const word of ['Lee Doe', 'Roe, Jane', 'Sam Poe', 'VNT-1001', 'OX-2002', 'NB-3003']) assert.ok(text.includes(word), word + ' in the merged PDF');
     // The first copy (its row says "x" under Day) has its Day box ticked, and not its Night box; the others neither.
+    // With the Day box unclear, no copy has a box ticked.
     const shift = text.split('\f').map(sheet => sheet.split('\n').find(line => /Day/.test(line) && /Night/.test(line)) || '');
-    assert.match(shift[0], /X\s*Day\s+Night/, 'copy 1: ' + JSON.stringify(shift[0]));
-    for (const line of shift.slice(1, 3)) assert.doesNotMatch(line, /X/, 'copies 2 and 3: ' + JSON.stringify(line));
+    if (day) assert.match(shift[0], /X\s*Day\s+Night/, 'copy 1: ' + JSON.stringify(shift[0]));
+    for (const line of shift.slice(day ? 1 : 0, 3)) assert.doesNotMatch(line, /X/, 'a copy with no box to tick: ' + JSON.stringify(line));
     assert.equal((await fieldsOf(merged)).length, 0, 'merged copies are print-ready');
     await shot('form-6-merge');
   });
@@ -261,8 +272,10 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     const got = await labels(), want = ['Name', 'Yes', 'Yes', 'Yes', 'No', 'Yes', 'No', 'I agree to the house rules', 'I have read the notice'];
     assert.equal(got.length, 11, JSON.stringify(got));
     // Each box has its own caption, or none ("checkbox") where the reader lost it, or is unclear: never another's words.
-    got.slice(0, 9).forEach((label, index) => assert.ok(label === want[index] || (index > 0 && label === 'checkbox'), 'blank ' + (index + 1) + ': ' + JSON.stringify(got)));
-    got.slice(9).forEach((label, index) => assert.ok(/^unclear: /.test(label) || label === 'checkbox', 'blank ' + (index + 10) + ': ' + JSON.stringify(got)));
+    // The last two ("Maybe", as near one box as the next) are never called by a caption.
+    assert.equal(got[0], 'Name', JSON.stringify(got));
+    got.slice(1, 9).forEach((label, index) => assert.ok(label === want[index + 1] || nothingOf(label, want.filter(other => other !== want[index + 1])), 'blank ' + (index + 2) + ': ' + JSON.stringify(got)));
+    got.slice(9).forEach((label, index) => assert.ok(nothingOf(label, want), 'blank ' + (index + 10) + ': ' + JSON.stringify(got)));
     assert.ok(got.slice(0, 9).filter((label, index) => label === want[index]).length >= 8, 'at least 8 of the 9 captions read: ' + JSON.stringify(got));
   });
   let templateFile;
