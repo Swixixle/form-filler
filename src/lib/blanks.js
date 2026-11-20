@@ -139,7 +139,71 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
   const hShort = runs(ink, width, height, true, Math.max(10, Math.round(unit * 0.35))).map(line => ({ x0: line.a0, x1: line.a1, y0: line.b0, y1: line.b1 })).filter(line => line.x1 - line.x0 <= unit * 2.2);
   const tol = Math.max(4, Math.round(unit * 0.4));
   const vAt = (x, top, bottom) => vLines.filter(line => Math.abs((line.x0 + line.x1) / 2 - x) <= tol && line.y0 <= top + tol && line.y1 >= bottom - tol);
-  const blanks = [], used = new Set();
+  const blanks = [], used = new Set(), spans = [], pieceOf = new Map();
+  const dark = (x, y) => x >= 0 && y >= 0 && x < width && y < height && ink[y * width + x] === 1;
+
+  // A wall, or the upright stroke of a letter? In a tight row a letter's stroke is nearly as tall as the row, so by its
+  // length (with the allowance kept for broken walls) it passes for a wall, and the row is cut at it. The cuts stay as
+  // they were: a stroke can seldom be told from a wall for sure, and where it cannot, nothing may change. What changes is
+  // what is offered beside a stroke that is surely a letter (see the pieces below). That is a stroke that
+  //   - stops short of both lines by more than 3 px, the gap the line finder bridges within a rule: a wall that stops
+  //     that close to a rule, or that a scan broke that little, is as joined to it as a rule is to itself; and
+  //   - stands among other ink: on two or more of its rows, ink within 9 px of it, its own letter's bowl, arm or serif
+  //     or the next letter of its word. At the page's working width (1700 px, about 2.8 px to the point) 9 px is about
+  //     3 pt: letters of a word stand closer than that in all but the largest bold print, and a wall stands further
+  //     than that from the words of its cells. Two rows, so that a speck is not a neighbour.
+  const inColumns = (stroke, y) => { for (let x = stroke.x0 - 1; x <= stroke.x1 + 1; x++) if (dark(x, y)) return true; return false; };
+  // The paper between a line and one end of a stroke, in rows, looked at in the stroke's columns and one more each side
+  // (the step that straightening a photo puts in a wall). From where its ink begins, the ink is followed back toward
+  // the line through touching ink, no further to the side than it has rows to climb (a quarter circle reaches as far
+  // to the side as it climbs) and 3 px: round a rounded corner a wall reaches its rule, while a letter's ink ends in
+  // paper.
+  const paper = (stroke, top, bottom, fromTop) => {
+    const step = fromTop ? 1 : -1, first = fromTop ? top.y1 + 1 : bottom.y0 - 1, stop = fromTop ? bottom.y0 : top.y1;
+    let gap = 0;
+    for (let y = first; y !== stop && !inColumns(stroke, y); y += step) gap++;
+    if (!gap || first + step * gap === stop) return gap;
+    const lo = stroke.x0 - 1 - gap - 3, hi = stroke.x1 + 1 + gap + 3;
+    let y = first + step * gap, row = [];
+    for (let x = stroke.x0 - 1; x <= stroke.x1 + 1; x++) if (dark(x, y)) row.push(x);
+    while (y !== first) {
+      y -= step;
+      const next = new Set();
+      for (const x of row) for (let dx = -1; dx <= 1; dx++) if (x + dx >= lo && x + dx <= hi && dark(x + dx, y)) next.add(x + dx);
+      if (!next.size) return Math.abs(y - first) + 1;
+      for (const x of [...next]) {
+        for (let k = x - 1; k >= lo && dark(k, y) && !next.has(k); k--) next.add(k);
+        for (let k = x + 1; k <= hi && dark(k, y) && !next.has(k); k++) next.add(k);
+      }
+      row = [...next];
+    }
+    return 0;
+  };
+  const letter = (stroke, top, bottom) => {
+    if (paper(stroke, top, bottom, true) <= 3 || paper(stroke, top, bottom, false) <= 3) return false;
+    let rows = 0;
+    for (let y = top.y1 + 1; y < bottom.y0 && rows < 2; y++) {
+      if (!inColumns(stroke, y)) continue;
+      let on = false;
+      for (let k = 2; k <= 9 && !on; k++) on = dark(stroke.x0 - k, y) || dark(stroke.x1 + k, y);
+      if (on) rows++;
+    }
+    return rows >= 2;
+  };
+  // The words a piece of a cell begins (or ends) with at a letter's stroke: the ink followed from the stroke along the
+  // cell's rows, over gaps narrower than half a line (a word space is, even in typewriter print), as far as the piece
+  // goes. A column with a single pixel of ink is paper (a photo's grain leaves single specks; a letter crosses a
+  // column with more). Returns the words' last column.
+  const wordFrom = (from, to, y0, y1) => {
+    const step = to > from ? 1 : -1, gap = Math.round(unit * 0.5);
+    let last = from;
+    for (let x = from; step > 0 ? x <= to : x >= to; x += step) {
+      let count = 0;
+      for (let y = Math.round(y0); y < Math.round(y1) && count < 2; y++) if (dark(x, y)) count++;
+      if (count >= 2) last = x; else if (Math.abs(x - last) > gap) break;
+    }
+    return last;
+  };
 
   // Rectangles: a top and a bottom line joined at both ends. Split at any vertical line that crosses the whole height.
   const byY = [...hLines].sort((a, b) => a.y0 - b.y0);
@@ -147,8 +211,10 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
     if (bottom.y0 <= top.y1 + unit * 0.6 || bottom.y0 - top.y1 > unit * 8) continue;
     const x0 = Math.max(top.x0, bottom.x0), x1 = Math.min(top.x1, bottom.x1);
     if (x1 - x0 < unit) continue;
-    const walls = vLines.filter(line => line.y0 <= top.y1 + tol && line.y1 >= bottom.y0 - tol && (line.x0 + line.x1) / 2 >= x0 - tol && (line.x0 + line.x1) / 2 <= x1 + tol)
-      .map(line => (line.x0 + line.x1) / 2).sort((a, b) => a - b);
+    const upright = vLines.filter(line => line.y0 <= top.y1 + tol && line.y1 >= bottom.y0 - tol && (line.x0 + line.x1) / 2 >= x0 - tol && (line.x0 + line.x1) / 2 <= x1 + tol)
+      .map(line => ({ line, x: (line.x0 + line.x1) / 2 })).sort((a, b) => a.x - b.x);
+    const walls = upright.map(item => item.x), sure = [];
+    const isLetter = k => sure[k] === undefined ? (sure[k] = letter(upright[k].line, top, bottom)) : sure[k];
     if (walls.length < 2) continue;
     // Only the nearest bottom for each stretch of top: a taller rectangle made of two stacked cells is not a cell.
     for (let index = 0; index + 1 < walls.length; index++) {
@@ -159,13 +225,17 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
       used.add(key);
       const inset = Math.max(4, Math.round(unit * 0.15)), cell = { x0: left + inset, y0: top.y1 + inset, x1: right - inset, y1: bottom.y0 - inset };
       const w = cell.x1 - cell.x0, h = cell.y1 - cell.y0;
+      const span = { top, bottom, left, right, cell, leftLetter: isLetter(index), rightLetter: isLetter(index + 1), sides: [upright[index].line, upright[index + 1].line], empty: false };
+      spans.push(span);
+      let blank = null;
       // A few specks (a scan, a photo's grain) are not a label: less ink than a small letter, and the cell is empty.
       const filled = inkIn(ink, width, cell.x0, cell.y0, cell.x1, cell.y1) * (cell.x1 - cell.x0) * (cell.y1 - cell.y0) < unit * unit * 0.12 ? null : inkExtent(ink, width, cell.x0, cell.y0, cell.x1, cell.y1);
-      if (!filled) { blanks.push({ kind: 'box', ...cell }); continue; }
+      if (!filled) { blank = { kind: 'box', ...cell }; span.empty = true; }
       // A label in the cell: the blank is what is left to its right, or below a caption along its top.
       // A tall box with its caption along the top is written in below the caption; a one-line cell, to the right.
-      if (h > unit * 2.2 && cell.y1 - filled.bottom > Math.max(unit * 1.1, h * 0.45)) blanks.push({ kind: 'box', ...cell, y0: filled.bottom + 3, label: true });
-      else if (cell.x1 - filled.right > Math.max(unit * 3, w * 0.25)) blanks.push({ kind: 'box', ...cell, x0: filled.right + unit * 0.5, label: true });
+      else if (h > unit * 2.2 && cell.y1 - filled.bottom > Math.max(unit * 1.1, h * 0.45)) blank = { kind: 'box', ...cell, y0: filled.bottom + 3, label: true };
+      else if (cell.x1 - filled.right > Math.max(unit * 3, w * 0.25)) blank = { kind: 'box', ...cell, x0: filled.right + unit * 0.5, label: true };
+      if (blank) { blanks.push(blank); pieceOf.set(blank, span); }
     }
   }
   if (debug) debug({ hShort, vLines, unit, tol });
@@ -194,7 +264,37 @@ export function findBlanks(gray, width, height, { textHeight, debug } = {}) {
   }
   // A row of labelled cells over a row of empty ones is a table's header: those labels are not blanks.
   const header = blank => blank.label && blank.kind === 'box' && blanks.some(other => other !== blank && other.kind === 'box' && !other.label && Math.abs(other.y0 - blank.y1) <= unit * 0.8 && other.x0 <= blank.x0 + unit && other.x1 >= blank.x1 - tol);
-  return order(blanks.filter(blank => !header(blank)), unit);
+  // A piece of a cell cut at a stroke that is surely a letter is what it was, but for these:
+  //   - In a table's first row (no cell above it), a piece between a wall and the words, over a cell that is empty
+  //     from wall to wall in the same column (its walls run on up through the piece's row, as a table's walls do): it
+  //     is a header's, as a labelled cell over an empty one is above, and not a blank.
+  //   - A piece left with less room than the narrowest blank a cell gives (0.7 of a line between walls, less the two
+  //     insets) once the words beside its letters are stepped past, or, between two words, with less paper than the
+  //     narrowest cell itself (0.7 of a line): it lies among the letters (between two of them, across a word space, or
+  //     the bit of a letter beside a wall), and is not a blank.
+  //   - A piece that begins at a letter is the room right of the words, a label's blank, and starts past the words'
+  //     last ink; left narrower than the narrowest blank, it is none.
+  //   - A piece written in below a caption stays as it was.
+  // A line within 3 px of another is the same line here (the line finder's own allowance for one line in pieces).
+  const firstRow = span => !spans.some(other => Math.abs(other.bottom.y0 - span.top.y0) <= 3 && other.left < span.right && other.right > span.left);
+  const overEmpty = span => spans.some(other => other.empty && !other.leftLetter && !other.rightLetter && Math.abs(other.top.y0 - span.bottom.y0) <= 3 && other.sides.every(line => line.y0 <= span.top.y1 + tol)
+    && (span.leftLetter ? other.left <= span.left + tol : Math.abs(other.left - span.left) <= tol) && (span.rightLetter ? other.right >= span.right - tol : Math.abs(other.right - span.right) <= tol));
+  const least = unit * 0.7 - 2 * Math.max(4, Math.round(unit * 0.15)), kept = [];
+  for (const blank of blanks) {
+    if (header(blank)) continue;
+    const span = pieceOf.get(blank);
+    if (!span || (!span.leftLetter && !span.rightLetter)) { kept.push(blank); continue; }
+    if (span.leftLetter !== span.rightLetter && firstRow(span) && overEmpty(span)) continue;
+    const { cell } = span;
+    if (blank.y0 !== cell.y0) { kept.push(blank); continue; }
+    const start = span.leftLetter ? wordFrom(Math.round(span.left), Math.floor(cell.x1), cell.y0, cell.y1) + 1 : cell.x0;
+    const end = span.rightLetter ? wordFrom(Math.round(span.right), Math.ceil(cell.x0), cell.y0, cell.y1) - 1 : cell.x1;
+    if (end - start + 1 < (span.leftLetter && span.rightLetter ? unit * 0.7 : least)) continue;
+    if (!span.leftLetter) { kept.push(blank); continue; }
+    const x0 = Math.max(blank.x0, start);
+    if (blank.x1 - x0 >= least) kept.push({ ...blank, x0, label: true });
+  }
+  return order(kept, unit);
 }
 
 // Round option buttons drawn on a page ("( ) Yes   ( ) No"), where only one of a set may be chosen. A button is a ring
