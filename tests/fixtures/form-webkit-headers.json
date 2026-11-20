@@ -1,8 +1,8 @@
 {"page": "form-webkit.png", "reads": [
-{"width":602,"height":77,"words":[{"text":"Item","confidence":80}]},
-{"width":1188,"height":138,"words":[{"text":"Item","confidence":65}]},
-{"width":502,"height":77,"words":[{"text":"Serial","confidence":95},{"text":"number","confidence":96}]},
-{"width":988,"height":138,"words":[{"text":"Serial","confidence":96},{"text":"number","confidence":95}]},
-{"width":362,"height":77,"words":[{"text":"Qty","confidence":96}]},
-{"width":708,"height":138,"words":[{"text":"Qty","confidence":95}]}
+{"width":610,"height":77,"ink":468,"words":[{"text":"Item","confidence":80}]},
+{"width":1204,"height":138,"ink":1872,"words":[{"text":"Item","confidence":65}]},
+{"width":510,"height":77,"ink":1439,"words":[{"text":"Serial","confidence":95},{"text":"number","confidence":96}]},
+{"width":1004,"height":138,"ink":5756,"words":[{"text":"Serial","confidence":96},{"text":"number","confidence":95}]},
+{"width":370,"height":77,"ink":429,"words":[{"text":"Qty","confidence":96}]},
+{"width":724,"height":138,"ink":1716,"words":[{"text":"Qty","confidence":95}]}
 ]}

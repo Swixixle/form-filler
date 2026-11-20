@@ -177,25 +177,42 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
    (both engines). A CSV column named "Day" then ticks the **Night** box. **[V]**
 5. **Table cells have no labels.** Every cell under a header row is labelled "blank". **[V]** **Fixed in 2.4.0**
    where the header can be checked. The page's own read does not return the words of a ruled header row, so each
-   header cell is now read on its own, twice: as it is, and from a copy enlarged twofold. The column's cells take
-   the header only when the two reads agree letter for letter, but for the misreads "[", "|" or "l" for "I" and "0"
-   for "O", and the first read is at least 60% sure. Otherwise they stay unlabelled. These cells are never filled with
-   the user's details.
+   header cell is now read on its own, twice: as it is, and from a copy enlarged twofold. The column's cells (two
+   empty rows or more) take the header only when:
+   - the two reads agree letter for letter, but for misread letters told by their neighbours ("[" or "|" for "I"; "l"
+     or "I"; "0" for "O" or "o");
+   - the first read is at least 60% sure;
+   - the header row is the table's top row, closed by a rule over it and the column's own walls.
+
+   Otherwise they stay unlabelled. These cells are never filled with the user's details. **[V]**
 
    It was measured on a frozen invented set built to trip it, by a separate agent that did not see the code: 18 pages,
    75 header cells over 232 body cells. The headers included ordinary ones, "#", "No.", "ID", two-line headers,
    handwriting, two smudges, two logos, two scribbles, two empty headers, and photographed copies. **[V]**
-   - No cell was named wrong.
-   - 160 of the 193 cells found under a real header were named right, and 33 were left blank.
-   - All 32 cells under a header with no words stayed blank.
-   - 7 cells were not found at all, on photos straightened 0.1° short.
+   - First run: one wrong name. "price" sat in the top cell of a "Unit price" column; the page's read had already
+     given that cell this word before this change.
+   - The rule then gained the top-cell part, and the set is no longer blind on that case.
+   - An independent review of the code then found six ways to a wrong name that the set did not cover, each
+     reproduced on pages of its own, and they were closed:
+     - a column run on across a boxed form's caption rows, or into a second table;
+     - a cramped header cut at the wall ("Neight");
+     - a filled-in row taken for the header;
+     - a misread letter settled one fixed way ("TotaI");
+     - a row's own label taken for part of the header ("AM" in "NAME");
+     - a caption over a single field taken for a column.
+   - Final run on the same set: no cell named wrong. 167 of the 193 cells found under a real header were named, and
+     26 left blank; all 32 under a header with no words stayed blank.
+   - 7 cells were not found at all, on two photos straightened 0.1° too far (1.4° for a 1.3° turn, 1.0° for 0.9°).
 
-   The first run had one wrong name: "price" in the top cell of a "Unit price" column, which the page's read had
-   already given that cell before this change. The rule now also replaces such a label in a column's top cell, or
-   drops it, and this was changed after seeing that run. On the same set, the misread repair names "Item" twice
-   where the reads were "Item" and "[tem", and lets no smudge, logo or scribble through. The 60% threshold now rests on
-   69 header cells, read twice each, with 3 first reads between 50% and 70%: one more right name at 50%, one fewer at
-   70%, no wrong name at either.
+   The misread repair names "Item" twice where the reads were "Item" and "[tem", and lets no smudge, logo or scribble
+   through. The 60% threshold now rests on 72 header cells, read twice each. 3 first reads fall between 50% and 70%.
+   At 50% one more right name and one wrong one ("Ne" for "No." on a photo); at 70% one right name fewer ("Item").
+   **[V]**
+
+   Left as limits:
+   - Two reads can agree on the same misreading ("lbs" read "Ibs" both times). **[V]** on a page of the review's.
+   - A table directly under another with the same columns has no header read. **[V]**
+   - A form remembered by 2.3.x keeps its labels until *Find the blanks again*. **[I]** from the code.
 6. **Dark mode hides the form.** With the system in dark mode, every blank on the form is a solid black bar, and the
    "Opening the form…" banner is pale text on a pale box. Seen on the live page. **[V]**
 7. **Blank numbers cover the start of each label.** Known; the README says so. **[V]**

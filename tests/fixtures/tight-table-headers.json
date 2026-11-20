@@ -1,8 +1,8 @@
 {"page": "tight-table.png", "reads": [
-{"width":446,"height":70,"words":[{"text":"Visitor","confidence":96}]},
-{"width":876,"height":124,"words":[{"text":"Visitor","confidence":96}]},
-{"width":447,"height":70,"words":[{"text":"Room","confidence":94}]},
-{"width":878,"height":124,"words":[{"text":"Room","confidence":95}]},
-{"width":413,"height":70,"words":[{"text":"Badge","confidence":95}]},
-{"width":810,"height":124,"words":[{"text":"Badge","confidence":96}]}
+{"width":456,"height":70,"ink":581,"words":[{"text":"Visitor","confidence":96}]},
+{"width":896,"height":124,"ink":2324,"words":[{"text":"Visitor","confidence":96}]},
+{"width":456,"height":70,"ink":566,"words":[{"text":"Room","confidence":94}]},
+{"width":896,"height":124,"ink":2264,"words":[{"text":"Room","confidence":95}]},
+{"width":423,"height":70,"ink":748,"words":[{"text":"Badge","confidence":95}]},
+{"width":830,"height":124,"ink":2992,"words":[{"text":"Badge","confidence":96}]}
 ]}

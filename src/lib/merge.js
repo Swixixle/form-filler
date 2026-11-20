@@ -29,9 +29,14 @@ export function matchColumns(blanks, headers) {
   blanks.forEach((blank, index) => { const key = norm(blank.label); if (key) byLabel.set(key, [...(byLabel.get(key) || []), index]); });
   // A label two blanks share matches neither (-1), with one exception: a checkbox and the line its caption names
   // ("[ ] Other: ____"), where the column goes to the line, as it did before checkboxes were named by their captions.
+  // A table's cells named by their column's header (column: true) share it with each other, and the form's own blank
+  // of that name, if it has one ("Name:" over a table with a Name column), is the one a column goes to, as it was
+  // before table cells were named; the table's cells alone match none (which row would it be?).
   const target = key => {
-    const found = byLabel.get(key), others = (found || []).filter(index => blanks[index].kind !== 'check');
-    return !found ? undefined : found.length === 1 ? found[0] : found.length === 2 && others.length === 1 ? others[0] : -1;
+    const all = byLabel.get(key);
+    if (!all) return undefined;
+    const own = all.filter(index => !blanks[index].column), found = own.length ? own : all, others = found.filter(index => blanks[index].kind !== 'check');
+    return found.length === 1 ? found[0] : found.length === 2 && others.length === 1 ? others[0] : -1;
   };
   const columns = headers.map(header => {
     const text = String(header).trim(), number = text.match(/^(?:#|blank\s*)?(\d{1,3})$/i);

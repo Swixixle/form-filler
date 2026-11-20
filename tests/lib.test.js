@@ -92,7 +92,7 @@ test('templates: made, read back the same, and a damaged one refused with what i
   assert.throws(broken(item => { item.blanks[2].page = 3; return item; }), /blank 3 is on a page the template does not have/);
   assert.throws(broken(item => { item.blanks[1].x1 = 99999; return item; }), /blank 2 runs off its page/);
   assert.throws(broken(item => { item.form.sha256 = 'nope'; return item; }), /fingerprint/);
-  assert.throws(broken(item => { item.version = 2; return item; }), /version 2/);
+  assert.throws(broken(item => { item.version = 3; return item; }), /version 3/);
   assert.throws(() => lib.readTemplate('{"formFiller":"something"}'), /not a Form Filler template/);
 });
 

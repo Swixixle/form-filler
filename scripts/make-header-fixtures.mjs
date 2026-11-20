@@ -32,7 +32,8 @@ try {
     const reads = [];
     await headerLabels(gray, width, height, labelBlanks(findBlanks(gray, width, height), words, unit), unit, async (pixels, w, h) => {
       const { data } = await worker.recognize(pngOf(pixels, w, h), {}, { blocks: true, text: false });
-      const read = { width: w, height: h, words: (data.blocks || []).flatMap(block => block.paragraphs || []).flatMap(paragraph => paragraph.lines || []).flatMap(line => line.words || []).map(word => ({ text: word.text, confidence: sure(word.confidence) })) };
+      // With the picture's size and how many of its pixels are ink, so a test can tell it is given the same picture.
+      const read = { width: w, height: h, ink: pixels.reduce((count, value) => count + (value < 128 ? 1 : 0), 0), words: (data.blocks || []).flatMap(block => block.paragraphs || []).flatMap(paragraph => paragraph.lines || []).flatMap(line => line.words || []).map(word => ({ text: word.text, confidence: sure(word.confidence) })) };
       reads.push(read); return read;
     });
     const out = name.replace(/\.png$/, '-headers.json');
