@@ -290,8 +290,9 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
 
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
 browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, tables with tight rows in 2.3.1, and table cells named
-by their headers in 2.4.0; the Mac app, vault,
-archive and backups are not started.
+by their headers in 2.4.0. A throwaway spike of the
+Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)); the app itself, the vault, archive and backups are not
+started.
 
 ## Licence
 

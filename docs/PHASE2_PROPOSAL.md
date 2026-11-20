@@ -161,15 +161,17 @@ How it maps onto this repository:
 | File scope | The app's own data folder, plus only the archive folder and backup destination you pick | Least access that works |
 | Rust code | A few dozen lines: register plugins, allow a picked folder | Everything else stays in JavaScript, where the tests are |
 
-Things the fetched pages did **not** state, so they are **[I]** and belong in the first spike:
+Things the fetched pages did **not** state, and what the shell spike found (2026-11-20, [SHELL_SPIKE.md](SHELL_SPIKE.md)):
 
-- That the Mac webview is WKWebView and the built app loads from a `tauri://` address.
-- Whether a service worker can register there. The plan: do not register one inside the shell. It exists to make a
-  web page work offline, and the shell is already offline.
-- Whether pdf.js's worker, Tesseract's worker files and the ONNX WebAssembly all load from that address.
-- Whether `persisted-scope` covers a folder picked through the dialog (its page does not say).
-- Whether a locally built, unsigned app opens on the Mac that built it without an Apple developer account. I expect
-  yes; signing matters when an app is downloaded.
+- The Mac webview is WKWebView, and the built app loads from `tauri://localhost`. **[V]**
+- A service worker does not register there: WebKit wants an http or https address for one. **[V]** As planned, the
+  shell registers none; it exists to make a web page work offline, and the shell is already offline.
+- pdf.js's worker and Tesseract's worker files and WebAssembly load from that address: a PDF opens and is read.
+  **[V]** The ONNX WebAssembly (handwriting) was not tried.
+- `persisted-scope` keeps a granted folder allowed after a restart. **[V]** The dialog grants a picked folder with the
+  same call. **[V]** from its source; a real click was not run.
+- A locally built, unsigned program runs on the Mac that built it. **[V]** for the bare program from the terminal;
+  a bundled `.app` opened from the Finder was not tried.
 
 ## Where the logic lives
 
@@ -254,7 +256,8 @@ idle (15 minutes is my suggested default). The passphrase is never stored.
 
 ### On disk
 
-In the app's own data folder (`~/Library/Application Support/<app id>/` **[I]**):
+In the app's own data folder (`~/Library/Application Support/<app id>/` **[V]**, where the shell spike's saved folder
+grants went):
 
 ```
 vault/
@@ -416,12 +419,22 @@ Design points:
 
 ### The open engineering question
 
-A snapshot may be gigabytes (photos and scans add up). The JavaScript library streams **[V]**; whether Tauri's file
-plugin can stream that much through the webview at a usable speed is **[I]**.
+A snapshot may be gigabytes (photos and scans add up). The JavaScript library streams **[V]**. Whether Tauri's file
+plugin could stream that much through the webview at a usable speed was **[I]**; the spike found that it can (below).
 
 Plan: write `backup.js` against the file interface, where Node's streams make it easy to test. In the spike, push a
 2 GB dummy archive through the real shell and time it. If it is too slow or too hungry, the same loop moves into one
 Rust command using the `tar` and `age` crates. The file format, the tests and the restore instructions do not change.
+
+What the spike measured, in an optimised build (SHELL_SPIKE.md):
+- Writing 2 GB with `writeFile` appends took 1.0 s; the same through `FileHandle.write`, whose bytes travel inside
+  JSON, took 135 s.
+- The whole loop, sealed with `age` as it is made and written with `writeFile` appends, took 9.8 s for 2 GB. Reading it
+  back and opening it took 9.2 s; `age` checked every piece, and all 2 GB came back.
+- Memory peaked at 350 MB in the page's process and 126 MB in the program.
+
+So it is neither too slow nor too hungry: the loop stays in JavaScript, and writes with `writeFile` appends, never
+`FileHandle.write`. **[V]** for 2 GB; **[I]** for much larger archives.
 
 ### The backup and restore test
 
@@ -510,7 +523,7 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | --- | --- | --- | --- |
 | – | **Never-list gate** (privacy wall, part 2) | Small | **Done.** A commit carrying a never-list value is refused, on the Mac and on GitHub |
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
-| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced |
+| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, and the handwriting reader's files |
 | 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand |
 | 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text |
 | 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |

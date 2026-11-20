@@ -112,7 +112,8 @@ the e-file route.
 | 10 | **Online layer (opt-in)** | A requirements agent that cites official sources, a remote-notary handoff, a hold-time agent. | Every requirement it states links to the official page. |
 
 Status: phase 1 is done (branch `phase-1-inventory`). Phase 2 has started on branch `phase-2` with the never-list
-gate and "slice 0" (the reader's defects in WebKit, older browsers and long PDFs). The Tauri shell has not started.
+gate and "slice 0" (the reader's defects in WebKit, older browsers and long PDFs). The Tauri shell's throwaway spike
+has run ([SHELL_SPIKE.md](SHELL_SPIKE.md)); the shell itself has not started.
 
 ## Archive: a copy of everything in and out
 
