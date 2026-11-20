@@ -1,5 +1,6 @@
 import './style.css';
 import { findBlanks, skewOf, order, labelBlanks } from '../lib/blanks.js';
+import { headerLabels } from '../lib/headers.js';
 import { placeAnswers, numberedLines } from '../lib/answers.js';
 import { buildPdf, joinPdfs, isSignature } from '../lib/output.js';
 import { readFields, withFound, pickOption } from '../lib/fields.js';
@@ -63,6 +64,10 @@ async function reader() {
 const grayOf = canvas => { const { width, height } = canvas, data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data, gray = new Uint8Array(width * height);
   for (let at = 0; at < gray.length; at++) gray[at] = (data[at * 4] * 299 + data[at * 4 + 1] * 587 + data[at * 4 + 2] * 114) / 1000; return gray; };
 const canvasOf = (width, height) => { const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const context = canvas.getContext('2d'); context.fillStyle = '#fff'; context.fillRect(0, 0, width, height); return canvas; };
+// Gray pixels (one byte each) as a canvas the reader can read.
+const pictureOf = (pixels, width, height) => { const canvas = canvasOf(width, height), context = canvas.getContext('2d'), image = context.createImageData(width, height);
+  for (let at = 0; at < pixels.length; at++) { image.data[at * 4] = image.data[at * 4 + 1] = image.data[at * 4 + 2] = pixels[at]; image.data[at * 4 + 3] = 255; }
+  context.putImageData(image, 0, 0); return canvas; };
 const imageCanvas = async source => { const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' }); return bitmap; };
 
 // The form, as pictures of its pages: a PDF page drawn, or a photo turned upright, shrunk to a working size and
@@ -157,7 +162,11 @@ async function openForm(file) {
           const heights = words.filter(word => word.confidence > 50).map(word => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b), textHeight = heights.length ? heights[Math.floor(heights.length / 2)] : undefined;
           // The blank finder measures by the page, not by the reader's guess at the text size: the reader's guess makes
           // letters look like checkboxes on some pages. The text size is used only to find each blank's label.
-          const found = labelBlanks(findBlanks(grayOf(page.canvas), page.width, page.height).map(blank => ({ ...blank, page: index })), words, textHeight || 20);
+          const gray = grayOf(page.canvas);
+          let found = labelBlanks(findBlanks(gray, page.width, page.height).map(blank => ({ ...blank, page: index })), words, textHeight || 20);
+          // The page's read misses the words of a table's header row: each header cell is read on its own, twice.
+          await ocr.setParameters({ tessedit_pageseg_mode: '6' });
+          found = await headerLabels(gray, page.width, page.height, found, textHeight || 20, (pixels, width, height) => ocr.recognize(pictureOf(pixels, width, height), {}, { blocks: true, text: false }).then(({ data }) => ({ words: wordsOf(data) })));
           for (const blank of order(withFound(fields.filter(field => field.page === index), found), textHeight || 20)) blanks.push({ ...blank, id: nextId++, page: index });
         }
       } finally { await ocr.terminate(); }

@@ -69,6 +69,11 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   // ("checkbox"), or is unclear, and then none of the words it might be is another box's caption.
   const readingsOf = label => [...label.matchAll(/“([^”]*)”/g)].map(match => match[1]);
   const nothingOf = (label, others) => label === 'checkbox' || (/^unclear: /.test(label) && readingsOf(label).every(reading => !others.includes(reading)));
+  // The invented form's table: two rows of Item | Serial number | Qty, blanks 4 to 9. A cell is labelled by its own
+  // column's header, or unlabelled ("blank") where the header's two reads did not agree: never another column's.
+  const HEADERS = ['Item', 'Serial number', 'Qty'];
+  const tableCells = async () => (await labels()).slice(3, 9);
+  const ownHeaders = cells => cells.every((label, index) => label === HEADERS[index % 3] || label === 'blank');
   const openForm = async (name, done) => { await page.setInputFiles('#form-file', path.join(fixtures, name)); await page.waitForFunction(text => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes(text), done, { timeout: 120000 }); };
   const typeAnswers = async text => { await page.fill('#answers', text); await page.waitForTimeout(100); };
   const expected = ['Jane Roe', '11/13/2026', 'Respiratory Care', 'Ventilator', 'VNT-2219', '1', 'Oximeter', 'OX-77', '2', false, true, 'Return by Friday', 'J. R. Smith'];
@@ -88,6 +93,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await openForm('form-photo.png', 'blanks found');
     assert.match(await summary(), /13 blanks found · straightened 1\.2°/);
     assert.deepEqual((await labels()).slice(9, 11), ['Day', 'Night'], 'each checkbox is labelled by its own caption, on its right');
+    assert.deepEqual(await tableCells(), [...HEADERS, ...HEADERS], 'each table cell is labelled by its column\'s header');
   });
   await step('loose answers land in order: periods and lines move on, a dash skips, x ticks', async () => {
     await page.uncheck('#use-details');
@@ -123,6 +129,8 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   await step('the same form as a PDF: its own page is kept, and the same 13 blanks are found', async () => {
     await openForm('form.pdf', 'form.pdf');
     assert.match(await summary(), /13 blanks found/);
+    const cells = await tableCells();
+    assert.ok(ownHeaders(cells), 'the table cells, each by its own column\'s header or none: ' + JSON.stringify(cells));
     const [day, night] = (await labels()).slice(9, 11);
     assert.ok((day === 'Day' || nothingOf(day, ['Night'])) && (night === 'Night' || nothingOf(night, ['Day'])), 'the checkboxes\' captions: ' + JSON.stringify([day, night]));
     await typeAnswers(ANSWERS);

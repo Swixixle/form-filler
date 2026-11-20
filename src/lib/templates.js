@@ -1,23 +1,27 @@
 // A template is a form's blanks, remembered, so the same form fills at once the next time and other programs can fill
 // it without finding anything. It is plain JSON:
 //
-//   { "formFiller": "template", "version": 1,
+//   { "formFiller": "template", "version": 1 | 2,
 //     "form": { "sha256": "<hex of the form file's bytes>", "name": "loan.pdf", "type": "pdf" | "image" },
 //     "pages": [{ "width": 1700, "height": 2200, "pdfPage": 0 | null, "angle": 0, "image"?: "data:image/jpeg;base64,…" }],
 //     "blanks": [{ "page": 0, "kind": "line" | "box" | "check" | "choice" | "sign", "x0", "y0", "x1", "y1", "label",
-//                  "field"?, "multiline"?, "maxLength"?, "options"?, "choice"?, "unsure"? }] }
+//                  "column"?, "field"?, "multiline"?, "maxLength"?, "options"?, "choice"?, "unsure"? }] }
 //
 // `unsure` (a checkbox's only, with label ""): up to three readings of the words that might be its caption, when which
 // words belong to it could not be told. readTemplate drops it anywhere else.
 //
+// `column` (true, with a label): the label is a table's column header, and the cell is one of many rows, so your
+// details never fill it. A template with such a cell says version 2: a program that reads only version 1 would drop
+// the mark and fill every row of a "Name" column with one name, so it refuses the file instead.
+//
 // Positions are pixels of the page picture (`width` by `height`). A template for a photo can carry the straightened
 // page picture itself (`image`), so a program with no way to straighten a photo can still make the PDF.
 export const KINDS = ['line', 'box', 'check', 'choice', 'sign'];
-const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'field', 'multiline', 'maxLength', 'options', 'choice', 'unsure'];
+const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'column', 'field', 'multiline', 'maxLength', 'options', 'choice', 'unsure'];
 
 export function makeTemplate({ form, pages, blanks }) {
   return {
-    formFiller: 'template', version: 1,
+    formFiller: 'template', version: blanks.some(blank => blank.column && blank.label) ? 2 : 1,
     form: { sha256: form.sha256, name: form.name || '', type: form.type },
     pages: pages.map(page => ({ width: page.width, height: page.height, pdfPage: page.pdfPage ?? null, angle: page.angle || 0, ...(page.image ? { image: page.image } : {}) })),
     blanks: blanks.map(blank => Object.fromEntries(KEEP.filter(key => blank[key] !== undefined && blank[key] !== null && blank[key] !== '').map(key => [key, blank[key]]))),
@@ -29,7 +33,7 @@ export function makeTemplate({ form, pages, blanks }) {
 export function readTemplate(input) {
   const data = typeof input === 'string' ? JSON.parse(input) : input, fail = message => { throw new Error('Not a usable template: ' + message + '.'); };
   if (!data || data.formFiller !== 'template') fail('it is not a Form Filler template');
-  if (data.version !== 1) fail('version ' + data.version + ' is not one this program reads');
+  if (data.version !== 1 && data.version !== 2) fail('version ' + data.version + ' is not one this program reads');
   if (!data.form || !/^[0-9a-f]{64}$/.test(data.form.sha256 || '')) fail('the form fingerprint (SHA-256) is missing');
   if (!['pdf', 'image'].includes(data.form.type)) fail('the form type must be "pdf" or "image"');
   if (!Array.isArray(data.pages) || !data.pages.length) fail('it has no pages');
@@ -50,6 +54,8 @@ export function readTemplate(input) {
     if (out.x1 <= out.x0 || out.y1 <= out.y0) fail(what + ' has no size');
     if (out.x1 > pages[blank.page].width + 1 || out.y1 > pages[blank.page].height + 1) fail(what + ' runs off its page');
     out.label = typeof blank.label === 'string' ? blank.label : '';
+    // A label read from the column's header of a table (never filled with your details).
+    if (blank.column === true && out.label) out.column = true;
     if (blank.field !== undefined) out.field = String(blank.field);
     if (blank.multiline) out.multiline = true;
     if (out.kind === 'check' && !out.label && Array.isArray(blank.unsure)) { const words = blank.unsure.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()).slice(0, 3); if (words.length) out.unsure = words; }
@@ -57,5 +63,5 @@ export function readTemplate(input) {
     if (blank.kind === 'choice') { if (!Array.isArray(blank.options)) fail(what + ' is a choice with no options'); out.options = blank.options.map(String); out.choice = blank.choice || 'list'; }
     return out;
   });
-  return { formFiller: 'template', version: 1, form: { sha256: data.form.sha256, name: String(data.form.name || ''), type: data.form.type }, pages, blanks };
+  return { formFiller: 'template', version: blanks.some(blank => blank.column) ? 2 : 1, form: { sha256: data.form.sha256, name: String(data.form.name || ''), type: data.form.type }, pages, blanks };
 }

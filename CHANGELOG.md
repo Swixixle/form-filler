@@ -1,5 +1,49 @@
 # Changes
 
+## 2.4.0 (2026-11-19)
+
+- **Table cells named by their headers.** A cell under a table's header row was listed as "blank". Now, in a table with
+  two empty rows or more, it is listed by its column's header ("Item", "Serial number", "Qty"), so the list shows what
+  goes where. The page's read of a whole form does not return a ruled header row's words, so each header cell is read
+  on its own instead, twice: as it is, and from a copy enlarged twofold. The cells are named only when all of these
+  hold:
+  - both reads say the same, letter for letter, but for misread letters told by their neighbours ("[tem" for "Item",
+    "TotaI" for "Total", "N0." for "No.");
+  - the first read is at least 60% sure;
+  - the header row is closed by a rule over it and the column's walls, and is the table's top row.
+
+  Otherwise they stay "blank": a wrong name is worse than none.
+- **Measured on an invented set made to trip it:** 75 headers, including smudges, logos, scribbles, handwriting,
+  two-line and one-character headers, and photographed copies. No cell was named wrong. Of the 193 cells found under a
+  real header, 167 were named and 26 left blank, mostly under handwritten or photographed headers. The 32 cells under a
+  smudge, logo, scribble or empty header all stayed blank. An independent review then found six ways to a wrong name
+  that the set did not cover, and they are closed:
+  - a column run on across the caption rows of a boxed form, or into a second table;
+  - a cramped header cut at the wall ("Neight" for "Weight");
+  - a filled-in row taken for the header;
+  - a misread letter settled one fixed way;
+  - a row's own label taken for part of the header;
+  - a caption over a single field taken for a column.
+- A table's first row could already take words from its header when the page's read reached them, sometimes only part
+  of a header ("price" for "Unit price"). Such a label (whole words of the header) now becomes the whole header once it
+  reads the same twice, and is dropped when it does not.
+- **A cell named from its column's header is never filled with your details** or today's date, whatever the header
+  says: a "Name" or "Date" column belongs to many rows. A single field under its own caption cell is no table and is
+  filled as before.
+- A CSV column named like a header goes to the form's own blank of that name, if it has one ("Name:" over a table with
+  a Name column); the table's cells alone match no column (which row would it be?). Columns by number still reach them.
+- A template with cells named from a header says version 2, which older versions of the program refuse rather than
+  fill every row of a Name column with one name.
+- No new download: the header reads use the same reader as the rest of the page. On the invented form (three
+  headers) they add about a tenth of a second to finding the blanks: 85 to 140 ms, measured in Chromium and WebKit on
+  a Mac.
+- Known limits:
+  - Two reads can agree on the same misreading (a column headed "lbs" is read "Ibs" both times, and named so).
+  - A table directly under another with the same columns has no header read: its walls run on up into the first.
+  - A form remembered by an earlier version keeps its labels until *Find the blanks again*.
+- In the library: `headerLabels` names a page's table cells from two reads of each header cell, given a function that
+  reads a small picture; `headerCells` and `headerLabel` are its parts. A template keeps the mark (`column: true`).
+
 ## 2.3.1 (2026-11-19)
 
 - **Tables with tight rows.** In rows under about 25 pt, the upright strokes of a header's letters passed for cell

@@ -51,7 +51,8 @@ export function formatDate(date, style = 'us') {
 export function autofill(blanks, profile, { today = new Date(), dateStyle = profile?.dateStyle || 'us' } = {}) {
   const out = new Map();
   blanks.forEach((blank, index) => {
-    if (blank.kind === 'check' || blank.kind === 'sign' || blank.kind === 'choice' || isSignatureLabel(blank.label)) return;
+    // A table's cell labelled by its column's header ("Name", "Date") is one of many rows, not yours: never filled.
+    if (blank.kind === 'check' || blank.kind === 'sign' || blank.kind === 'choice' || blank.column || isSignatureLabel(blank.label)) return;
     const key = detailFor(blank.label), value = key ? detailValue(profile, key) : '';
     if (value) out.set(index, value);
     else if (today && isDate(blank.label)) out.set(index, formatDate(today, dateStyle));
