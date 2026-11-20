@@ -1,6 +1,6 @@
 {
   "name": "form-filler",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
   "license": "MIT",
   "description": "Fill hard forms easily: blanks found from the page or the PDF's own fields, loose answers placed in order, your details and today's date filled, templates, mail merge, handwriting read on the device.",
@@ -10,7 +10,10 @@
   },
   "exports": {
     ".": "./src/lib/index.js",
-    "./files/node": "./src/lib/files/node.js"
+    "./files/node": "./src/lib/files/node.js",
+    "./stores/node": "./src/lib/stores/node.js",
+    "./stores/browser": "./src/lib/stores/browser.js",
+    "./stores/memory": "./src/lib/stores/memory.js"
   },
   "bin": {
     "form-filler": "bin/form-filler.mjs"
@@ -27,6 +30,7 @@
     "hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
+    "age-encryption": "0.3.1",
     "pdf-lib": "1.17.1"
   },
   "devDependencies": {

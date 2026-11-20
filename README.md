@@ -94,11 +94,21 @@ fingerprints.
 - **One download, only when you ask for it.** *Read handwriting* fetches a handwriting model (TrOCR) from Hugging Face
   the first time, at a fixed version: Quick, about 64 MB, or Larger, about 338 MB. Your photo stays on the device, but
   the download tells Hugging Face your IP address, as any download does.
-- **What it keeps, and where.** Your details, a signature if you choose to keep it, and each form's blank positions are
-  kept in this browser's storage on this device. That storage belongs to the whole web address the page is served from
-  (`swixixle.github.io`), which other pages published there share, so they could read it. *Forget my details* and
-  *Forget it* (beside a saved signature) remove what is kept. What is read back from storage is checked before it is
-  used.
+- **What it keeps, and where.** Your details and a signature (if you choose to keep it) are kept in this browser on
+  this device in an encrypted vault, locked with a passphrase you choose, never in plain text: the browser's storage
+  belongs to the whole web address the page is served from (`swixixle.github.io`), which other pages published there
+  share. The vault is in the [age](https://age-encryption.org) format, the passphrase is never kept, and while it is
+  unlocked your details are in the page's memory only; it locks again when you close the page or leave it alone for
+  15 minutes. When the vault is made you are shown a recovery key, once: the only way back in if the passphrase is
+  forgotten. Each form's blank positions are kept in plain storage, without the file's name, since they hold nothing
+  of you. *Forget my details* removes the vault; details an earlier version kept in plain text are shown, and gone as
+  soon as you lock them away or forget them. What is read back from storage is checked before it is used.
+- **What the vault does not stop.** It keeps other pages at this address from reading your details out of the
+  browser's storage. It cannot stop such a page from scripting this one while it is open: the page refuses to run
+  inside another page or in a window another page opened, and its offline copy is checked against the fingerprints
+  its build wrote, but only a web address of its own would close this off. Changing your passphrase locks the same key
+  again, so an earlier copy of the key file still opens with the old one; if your passphrase may have been seen,
+  forget your details and save them again, which makes a new key.
 - **The repository holds nothing personal.** Tests, fixtures and pictures use invented people and invented forms only.
   A gate checks every commit before it is made, and again on GitHub, for the shapes of Social Security, routing and
   account numbers, dates of birth, real e-mail addresses, and any picture or PDF not listed as invented. On the
@@ -143,7 +153,8 @@ forms.
 
 ## Plugging it into other programs
 
-**The library** (`src/lib/index.js`, ES module, Node 22 or a browser; its only runtime dependency is pdf-lib):
+**The library** (`src/lib/index.js`, ES module, Node 22 or a browser; its runtime dependencies are pdf-lib and, for
+the vault, age-encryption):
 
 ```js
 import { readFields, placeAnswers, buildPdf } from 'form-filler';
@@ -228,6 +239,23 @@ its record) and `archive index` (the index cache made again from every record). 
 index knew that have left the archive, and exits 1 if anything is missing, changed, gone, unfinished or unreadable;
 with `--strict`, also if anything is not recorded. The archive's flags are read strictly, so a misspelt one is
 refused instead of swallowing the file after it.
+
+**The vault** (`src/lib/vault.js` documents it): your details, saved signature and a locker of documents, encrypted
+with [age](https://age-encryption.org) so every file opens with the stock `age` tool too. A passphrase locks the vault
+key; the key locks everything else, so a new passphrase rewrites one small file, and the key itself is the recovery
+key, given once when the vault is made. It keeps its files in a store it is handed (in memory, in a folder, or in a
+browser's IndexedDB), each written whole with the copy before kept beside it, and each record checked when read back
+so a damaged or swapped file is refused.
+
+```js
+import { createVault, unlockVault } from 'form-filler';
+import { nodeStore } from 'form-filler/stores/node';
+
+const store = nodeStore('Test Vault');
+const { vault, recoveryKey } = await createVault(store, 'a few unrelated invented words');
+await vault.writeProfile({ details: { fullName: 'Jane Roe' }, signature: null });
+const again = await unlockVault(store, recoveryKey);   // or the passphrase
+```
 
 ## What it cannot do (yet)
 
@@ -323,13 +351,14 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
 browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, tables with tight rows in 2.3.1, and table cells named
 by their headers in 2.4.0. A throwaway spike of the
-Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)), and the archive is built as a library and a command
-(2.5.0); the app itself, the vault and backups are not started.
+Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)), the archive is built as a library and a command
+(2.5.0), and the vault keeps your details locked (2.6.0); the app itself and backups are not started.
 
 ## Licence
 
 MIT ([LICENSE](LICENSE)). The page bundles Tesseract.js (Apache 2.0), ONNX Runtime Web (MIT), Transformers.js
-(Apache 2.0), pdf.js (Apache 2.0) and pdf-lib (MIT); their licence files are copied into the build (`ocr/`, `ort/`,
+(Apache 2.0), pdf.js (Apache 2.0), pdf-lib (MIT), and for the vault age-encryption (BSD 3-Clause) with the noble and
+scure cryptography libraries (MIT); their licence files are copied into the build (`ocr/`, `ort/`,
 `licenses/`). The handwriting models are Microsoft's TrOCR in Xenova's ONNX conversion, downloaded at run time, not
 bundled: Microsoft's code for TrOCR (the unilm repository) and the base model's card say MIT; the small model's
 Hugging Face card names no licence (checked 2026-11-13).

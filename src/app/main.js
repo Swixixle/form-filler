@@ -10,10 +10,25 @@ import { parseCsv, matchColumns, columnIds, columnsNow, rowValues } from '../lib
 import { segmentLines } from '../lib/handwriting.js';
 import { HANDWRITING_MODELS } from '../lib/models.js';
 import { sha256 } from '../lib/hash.js';
+import { browserStore } from '../lib/stores/browser.js';
+import { makeKeeper, MIN_PASSPHRASE } from './keep.js';
 
 const app = document.getElementById('app');
 const asset = path => new URL(import.meta.env.BASE_URL + path, window.location.href).href;
 const h = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+// Form Filler runs only as itself. Inside another page's frame, or in a window that another page at this same web
+// address opened and still holds, that page could read whatever is typed here, so it says so and goes no further.
+const held = (() => {
+  try { if (window.top !== window) return true; } catch { return true; }
+  try { if (window.opener && window.opener.location.href) return true; } catch { /* opened from another site, which cannot reach in */ }
+  return false;
+})();
+if (held) {
+  app.innerHTML = '<main><section class="panel"><h1>Form Filler</h1><p>Form Filler does not run inside another page, or in a window that another page opened, because that page could read what you type here.</p>' +
+    '<p><a href="' + h(location.href) + '" target="_blank" rel="noopener">Open Form Filler on its own</a></p></section></main>';
+  throw new Error('Form Filler will not run inside another page.');
+}
+try { window.opener = null; } catch { /* nothing to let go of */ }
 const MAX_PAGES = 10, WIDTH = 1700;
 
 // What this browser keeps on this device: your details, a signature if you ask, and each form's blanks (by the form's
@@ -31,7 +46,24 @@ let answers = '', overrides = {}, busy = '', note = '', adding = false, prints =
 // same site address, so what comes back from it is checked before it is used, and escaped where it is written.
 const asSignature = value => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) ? value : null;
 const asDetails = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string')) : {};
-let useDetails = store.get('useDetails', true) !== false, profile = asDetails(store.get('profile', {})), savedSignature = asSignature(store.get('signature', null));
+let useDetails = store.get('useDetails', true) !== false, profile = {}, savedSignature = null, confirmForget = false;
+// Your details and a saved signature are kept locked in this browser with your passphrase, never in plain text
+// (keep.js). Plain copies an earlier version made are read once, checked as above, and gone once locked away.
+const keeper = makeKeeper({
+  store: browserStore(),
+  legacy: { read: () => ({ details: asDetails(store.get('profile', {})), signature: asSignature(store.get('signature', null)) }),
+    drop: which => { if (which !== 'signature') store.drop('profile'); if (which !== 'details') store.drop('signature'); } },
+  onChange: () => { profile = keeper.details; savedSignature = keeper.signature; render(); },
+  // Locked: your details have left the form, and so does any signature on it, with the PDFs made from them.
+  onLock: () => {
+    let taken = 0;
+    for (const id of Object.keys(overrides)) if (isSignature(overrides[id])) { delete overrides[id]; taken++; }
+    readyToSend = null; prints = {};
+    if (pad.open) pad.close('cancel');
+    clearPad();
+    note = 'Your details are locked' + (taken ? ', and the signature was taken off the form' : '') + '.';
+  },
+});
 let merge = null;         // { name, headers, rows, columns, unmatched, shared, ids }: columns as matched when opened; ids keep them to their blanks
 let hand = null;          // { lines: [{ img, text, done }], model }
 let pendingTemplate = null, pendingMark = null;
@@ -107,7 +139,8 @@ const templateNow = withImages => makeTemplate({ form: { sha256: form.hash, name
   pages: form.pages.map(page => ({ ...page, image: withImages && !form.pdf ? page.canvas.toDataURL('image/jpeg', 0.85) : undefined })), blanks });
 // A remembered form, or a template file, carries `labelsMark` as `labels` (see above); readTemplate ignores it.
 const marked = template => ({ ...template, ...(labelsMark ? { labels: labelsMark } : {}) });
-const remember = () => { if (form) store.set('template:' + form.hash, marked(templateNow(false))); };
+// Remembered without the file's name, which can hold a person's (the open file brings its own name).
+const remember = () => { if (form) { const template = marked(templateNow(false)); template.form = { ...template.form, name: '' }; store.set('template:' + form.hash, template); } };
 // The reader's words, with their letters: a caption the reader ran into a checkbox's square is cut at the square
 // letter by letter (see cleanWords).
 const wordsOf = data => (data.blocks || []).flatMap(block => block.paragraphs || []).flatMap(paragraph => paragraph.lines || []).flatMap(line => line.words || [])
@@ -305,13 +338,71 @@ const shown = (blank, value) => isSignature(value) ? '✍ signed' : blank.kind =
   : blank.kind === 'choice' && value ? (pickOption(blank.options, value) ? '<b>' + h(pickOption(blank.options, value)) + '</b>' : '<b class="miss">' + h(value) + '</b> (not one of: ' + h(blank.options.join(', ')) + ')') : '<b>' + h(value || '—') + '</b>';
 const listMarkup = (values, fixed) => blanks.map((blank, index) => '<li><span class="label' + (!blank.label && blank.unsure ? ' unsure" title="Which words belong to this box could not be told. Check it on the form.' : '') + '">' + (!blank.label && blank.unsure ? unclear(blank) : h(blank.label || (blank.kind === 'check' ? 'checkbox' : 'blank'))) + '</span> ' + shown(blank, values[index]) + (fixed.has(index) && !(blank.id in overrides) && values[index] === fixed.get(index) ? ' <span class="from">filled for you</span>' : '') + '</li>').join('');
 
+// The recovery key in groups of six, easier to copy onto paper (spaces do not matter when it is typed back).
+const grouped = key => key.slice(0, 16) + ' ' + key.slice(16).match(/.{1,6}/g).join(' ');
 function detailsPanel() {
-  return '<details class="panel" id="details-panel"' + (store.get('detailsOpen', false) ? ' open' : '') + '><summary><h2>Your details</h2></summary>' +
-    '<p class="subtle">Filled into any blank whose label asks for them (Name, Phone, E-mail, City, State, ZIP…), and “Date” blanks get today. Kept in this browser on this device only, never sent anywhere.</p>' +
-    '<div class="details">' + DETAILS.map(([key, title]) => '<label>' + h(title) + '<input name="detail-' + key + '" value="' + h(profile[key] || '') + '" autocomplete="off"></label>').join('') +
-    '<label>Dates written as<select name="detail-dateStyle">' + [['us', '11/13/2026'], ['iso', '2026-11-13'], ['day', '13/11/2026']].map(([value, title]) => '<option value="' + value + '"' + ((profile.dateStyle || 'us') === value ? ' selected' : '') + '>' + title + '</option>').join('') + '</select></label></div>' +
-    '<div class="tools"><button type="button" id="save-details" class="primary">Save my details</button><button type="button" id="forget-details" class="secondary">Forget my details</button></div>' +
-    (savedSignature ? '<p class="subtle">Your saved signature: <img class="saved-sign" alt="Saved signature" src="' + h(savedSignature) + '"> <button type="button" id="forget-signature" class="secondary">Forget it</button></p>' : '') + '</details>';
+  const state = keeper.state, button = (id, title, kind = 'secondary') => '<button type="button" id="' + id + '" class="' + kind + '">' + title + '</button>';
+  const secret = (name, title, auto) => '<label>' + title + '<input type="password" name="' + name + '" autocomplete="' + auto + '"></label>';
+  const choose = (name, title) => '<div class="details passphrase">' + secret(name, title + ' (at least ' + MIN_PASSPHRASE + ' characters; a few unrelated words are best)', 'new-password') + secret(name + '-again', 'The same passphrase again', 'new-password') + '</div>';
+  const inputs = '<div class="details">' + DETAILS.map(([key, title]) => '<label>' + h(title) + '<input name="detail-' + key + '" value="' + h(profile[key] || '') + '" autocomplete="off"></label>').join('') +
+    '<label>Dates written as<select name="detail-dateStyle">' + [['us', '11/13/2026'], ['iso', '2026-11-13'], ['day', '13/11/2026']].map(([value, title]) => '<option value="' + value + '"' + ((profile.dateStyle || 'us') === value ? ' selected' : '') + '>' + title + '</option>').join('') + '</select></label></div>';
+  const unlock = '<div class="details unlock"><label>Your passphrase, or your recovery key<input type="password" id="unlock-secret" autocomplete="current-password"></label></div>';
+  const forget = confirmForget ? '<p class="warn">This removes your details and saved signature from this browser for good: they cannot be brought back.</p><div class="tools">' + button('forget-yes', 'Yes, forget them', 'primary') + button('forget-no', 'Keep them') + '</div>' : '';
+  const tools = (...buttons) => confirmForget ? forget : '<div class="tools">' + buttons.join('') + '</div>';
+  const stray = keeper.stray ? '<p class="warn">This browser also holds details in plain text beside your locked ones. This version never writes them, so another page at this address may have put them there. They are not used.</p><div class="tools">' + button('forget-stray', 'Forget the plain copies') + '</div>' : '';
+  let body;
+  if (state === 'checking') body = '<p class="subtle">Looking for your saved details…</p>';
+  else if (keeper.legacy) body = '<p class="warn">An earlier version of this page kept these details in this browser in plain text, where another page could read them. ' +
+    (state === 'none' ? 'Choose a passphrase to lock them away, or forget them.</p>' + inputs + choose('passphrase', 'A passphrase') + tools(button('save-details', 'Lock them away', 'primary'), button('forget-details', 'Forget them'))
+      : 'This browser keeps nothing else here, so they cannot be locked away: forget them, or use them as they are.</p>' + inputs + tools(button('save-details', 'Use these details', 'primary'), button('forget-details', 'Forget them')));
+  else if (state === 'locked') body = stray + '<p class="subtle">Your details are kept here, locked.</p>' + unlock + tools(button('unlock', 'Unlock', 'primary'), button('forget-details', 'Forget my details'));
+  else if (state === 'none') body = inputs + choose('passphrase', 'A passphrase to lock them with') + tools(button('save-details', 'Save my details', 'primary'));
+  else if (state === 'open') body = stray + inputs + tools(button('save-details', 'Save my details', 'primary'), button('lock-now', 'Lock now'), button('forget-details', 'Forget my details')) +
+    '<details class="more"><summary>Change my passphrase</summary>' + choose('passphrase-change', 'A new passphrase') + '<div class="tools">' + button('change-passphrase', 'Change it') + '</div></details>';
+  else body = inputs + '<p class="subtle">This browser keeps nothing here (a private window?), so your details last until you close the page.</p>' + tools(button('save-details', 'Use these details', 'primary'));
+  const recovery = keeper.recoveryKey ? '<div class="recovery" id="recovery-key"><h3>Your recovery key</h3><p>If you forget your passphrase, this is the only way back to your details. Print it or write it down, and keep it somewhere safe; it is shown only now.</p>' +
+    '<code>' + h(grouped(keeper.recoveryKey)) + '</code><div class="tools">' + button('print-key', 'Print it') + button('key-kept', 'I have kept it', 'primary') + '</div></div>' : '';
+  return '<details class="panel" id="details-panel"' + (store.get('detailsOpen', false) || keeper.recoveryKey || keeper.legacy ? ' open' : '') + '><summary><h2>Your details</h2></summary>' +
+    '<p class="subtle">Filled into any blank whose label asks for them (Name, Phone, E-mail, City, State, ZIP…), and “Date” blanks get today. Kept in this browser on this device only, locked with a passphrase you choose, and never sent anywhere.</p>' +
+    recovery + body + (savedSignature && state !== 'locked' ? '<p class="subtle">Your saved signature: <img class="saved-sign" alt="Saved signature" src="' + h(savedSignature) + '"> <button type="button" id="forget-signature" class="secondary">Forget it</button></p>' : '') + '</details>';
+}
+// Saving: with the vault open, locked away at once; with none yet, a vault made with the passphrase typed twice.
+// What was typed is remembered for the page first, so nothing is lost if the passphrase is refused.
+async function saveDetails() {
+  const value = name => app.querySelector('[name=' + name + ']')?.value || '';
+  const details = Object.fromEntries([...DETAILS.map(([key]) => key), 'dateStyle'].map(key => [key, value('detail-' + key).trim()]).filter(([, item]) => item));
+  if (keeper.state === 'none') {
+    const passphrase = value('passphrase'), again = value('passphrase-again');
+    await keeper.save({ details });
+    if (passphrase !== again) note = 'The two passphrases are not the same.';
+    else { note = 'Locking your details away…'; render(); try { await keeper.create(passphrase); note = 'Your details are saved, locked with your passphrase. Keep the recovery key below.'; } catch (error) { note = error.message; } }
+  } else {
+    const kept = await keeper.save({ details }).catch(error => (note = error.message, null));
+    if (kept) note = kept === 'kept' ? 'Your details are saved, locked with your passphrase.' : kept === 'locked' ? 'Unlock your details first; then save your changes.' : 'This browser keeps nothing here, so your details last until you close the page.';
+  }
+  render();
+}
+async function unlockDetails() {
+  const secret = app.querySelector('#unlock-secret')?.value || '';
+  if (!secret) { note = 'Type your passphrase, or your recovery key.'; render(); return; }
+  note = 'Unlocking…'; render();
+  try {
+    const unreadable = await keeper.unlock(secret);
+    note = unreadable ? 'Unlocked, but your saved details could not be read (' + unreadable + ') Save them again.' : 'Your details are unlocked. They lock again after 15 minutes left alone, or when you close the page.';
+  }
+  catch (error) { note = error.code === 'EPASSPHRASE' ? error.message.replace('this vault', 'your details') + (/passphrase/.test(error.message) ? ' If it is forgotten, your recovery key opens them.' : '') : error.message; }
+  render();
+}
+async function changePassphrase() {
+  const value = name => app.querySelector('[name=' + name + ']')?.value || '';
+  if (value('passphrase-change') !== value('passphrase-change-again')) { note = 'The two passphrases are not the same.'; render(); return; }
+  try { await keeper.changePassphrase(value('passphrase-change')); note = 'Your passphrase is changed. Your recovery key still opens your details.'; } catch (error) { note = error.message; }
+  render();
+}
+// Printing the recovery key prints that box alone (style.css).
+function printKey() {
+  const root = document.documentElement, done = () => { root.classList.remove('print-key'); window.removeEventListener('afterprint', done); };
+  root.classList.add('print-key'); window.addEventListener('afterprint', done); window.print();
 }
 function mergePanel() {
   if (!form) return '';
@@ -343,6 +434,7 @@ function render() {
     '<b>Everything happens on this device.</b> Nothing is uploaded.</p></header>' +
     (busy ? '<div class="busy" role="status">' + h(busy) + '<div class="bar"><i></i></div></div>' : '') +
     (note ? '<div class="note" role="status">' + h(note) + (pendingTemplate ? ' <button type="button" id="template-anyway" class="secondary">Use it on this form anyway</button>' : '') + '</div>' : '') +
+    (keeper.legacy ? '<div class="note warn" id="plain-details" role="status">An earlier version kept your details in this browser in plain text, where another page at this address could read them. Lock them away with a passphrase, or forget them, under <a href="#details-panel">Your details</a>.</div>' : '') +
     (problems.length ? '<div class="note" role="status"><b>Not everything went in as written:</b><ul>' + problems.map(problem => '<li>' + h(problem) + '</li>').join('') + '</ul></div>' : '') +
     '<section class="panel"><h2>1. The form</h2><div class="tools"><label class="pick">' + (form ? 'Use a different form' : 'Choose the form: a photo, a scan or a PDF') +
     '<input id="form-file" type="file" accept="image/*,application/pdf,.pdf"></label><label class="pick small">Open a template<input id="template-file" type="file" accept=".json,application/json"></label></div>' +
@@ -354,7 +446,7 @@ function render() {
       (useDetails && fixed.size ? ' Blanks filled from your details are passed over.' : '') + '</p>' +
       '<details class="more" id="rules-more"' + (store.get('rulesOpen', false) ? ' open' : '') + '><summary>More ways to write answers</summary><p class="rules"><b>4)</b> or <b>4:</b> at the start puts that answer in blank 4. ' +
       'For a checkbox, <b>x</b> or <b>yes</b> ticks it; for a choice, its first letters are enough (“emer” picks Emergency). A period inside a number (7.38), after an initial (J. Smith) or in an e-mail address stays in the answer.</p></details>' +
-      '<label class="toggle"><input type="checkbox" id="use-details"' + (useDetails ? ' checked' : '') + '> Fill my details and today’s date' + (useDetails ? ' (' + fixed.size + ' blank' + (fixed.size === 1 ? '' : 's') + ')' : '') + '</label>' +
+      '<label class="toggle"><input type="checkbox" id="use-details"' + (useDetails ? ' checked' : '') + '> Fill my details and today’s date' + (useDetails ? ' (' + fixed.size + ' blank' + (fixed.size === 1 ? '' : 's') + ')' : '') + (useDetails && keeper.state === 'locked' && !keeper.legacy ? ' — your details are locked: unlock them under Your details' : '') + '</label>' +
       '<textarea id="answers" rows="8" placeholder="Jane Roe. 11/13/2026. Respiratory Care&#10;Ventilator. VNT-2219. 1">' + h(answers) + '</textarea>' +
       '<div class="tools"><label class="pick small">Read a printed page<input id="answers-photo" type="file" accept="image/*"></label>' +
       '<label class="pick small">Read handwriting<input id="hand-photo" type="file" accept="image/*"></label>' +
@@ -459,7 +551,7 @@ function blankCsv() {
 // Signing: draw with a finger (or a mouse) in a box the shape of a signature line.
 const pad = document.createElement('dialog');
 pad.className = 'pad';
-pad.innerHTML = '<form method="dialog"><h2>Sign</h2><canvas width="900" height="260" aria-label="Draw your signature here"></canvas><label class="toggle"><input type="checkbox" name="keep"> Keep this signature on this device</label>' +
+pad.innerHTML = '<form method="dialog"><h2>Sign</h2><canvas width="900" height="260" aria-label="Draw your signature here"></canvas><label class="toggle"><input type="checkbox" name="keep"> Keep this signature on this device, locked with your details<span class="keep-why"></span></label>' +
   '<div class="tools"><button type="button" value="clear" class="secondary">Clear</button><button type="button" value="saved" class="secondary" hidden>Use my saved signature</button><button value="cancel" class="secondary">Cancel</button><button value="use" class="primary">Use this signature</button></div></form>';
 document.body.append(pad);
 const ink = pad.querySelector('canvas'), pen = ink.getContext('2d');
@@ -493,13 +585,22 @@ pad.addEventListener('click', event => {
 pad.addEventListener('close', () => {
   if (pad.returnValue === 'use' && stroked) {
     const signature = signatureImage();
-    if (signature) { overrides[signing] = { signature }; if (pad.querySelector('[name=keep]').checked) { savedSignature = signature; store.set('signature', signature); } }
+    if (signature) {
+      overrides[signing] = { signature };
+      // Kept only if your details are still unlocked now (they may have locked while you signed); said either way.
+      if (pad.querySelector('[name=keep]').checked) void keeper.save({ signature }).then(answer => {
+        note = answer === 'kept' ? 'Your signature is kept, locked with your details.' : 'Your signature was not kept: ' + (answer === 'locked' ? 'your details locked while you signed. Unlock them and sign again to keep it.' : 'your details are not locked away here.');
+      }, error => { note = error.message; }).then(render);
+    }
   }
   signing = null; render();
 });
 function openPad(id) {
   signing = id; clearPad(); pad.returnValue = '';
-  pad.querySelector('[value=saved]').hidden = !savedSignature; pad.querySelector('[name=keep]').checked = false;
+  pad.querySelector('[value=saved]').hidden = !savedSignature;
+  const keep = pad.querySelector('[name=keep]'), state = keeper.state;
+  keep.checked = false; keep.disabled = state !== 'open';
+  pad.querySelector('.keep-why').textContent = state === 'open' ? '' : state === 'locked' ? ' (unlock your details first)' : state === 'unavailable' ? ' (this browser keeps nothing here)' : ' (save your details with a passphrase first)';
   pad.showModal();
 }
 
@@ -550,13 +651,17 @@ app.addEventListener('click', event => {
     note = read.numbered ? read.numbered + ' lines start with a blank’s number, so each went to that blank. ' + unplaced(read.unnumbered) + 'Check them on the form.' : ''; render();
   }
   if (target.id === 'hand-drop') { hand = null; note = ''; render(); }
-  if (target.id === 'save-details') {
-    profile = Object.fromEntries([...DETAILS.map(([key]) => key), 'dateStyle'].map(key => [key, app.querySelector('[name=detail-' + key + ']')?.value.trim() || '']).filter(([, value]) => value));
-    note = store.set('profile', profile) ? 'Your details are saved on this device.' : 'This browser would not keep your details (a private window?). They will be used until you close the page.';
-    render();
-  }
-  if (target.id === 'forget-details') { profile = {}; store.drop('profile'); note = 'Your details are forgotten on this device.'; render(); }
-  if (target.id === 'forget-signature') { savedSignature = null; store.drop('signature'); render(); }
+  if (target.id === 'save-details') void saveDetails();
+  if (target.id === 'unlock') void unlockDetails();
+  if (target.id === 'lock-now' && !keeper.lock()) { note = 'Keep your recovery key first, then lock: press “I have kept it”.'; render(); }
+  if (target.id === 'forget-stray') { keeper.forgetStray(); note = 'The plain copies are forgotten; your locked details are as they were.'; render(); }
+  if (target.id === 'change-passphrase') void changePassphrase();
+  if (target.id === 'key-kept') keeper.keptKey();
+  if (target.id === 'print-key') printKey();
+  if (target.id === 'forget-details') { confirmForget = true; render(); }
+  if (target.id === 'forget-no') { confirmForget = false; render(); }
+  if (target.id === 'forget-yes') { confirmForget = false; void keeper.forget().then(() => { note = 'Your details are forgotten on this device.'; }, error => { note = error.message; }).then(render); }
+  if (target.id === 'forget-signature') void keeper.forgetSignature().then(() => { note = 'Your saved signature is forgotten.'; }, error => { note = error.message; }).then(render);
 });
 // Quicker ways in on a computer: drop a form (or a template) anywhere on the page, paste a screenshot of one, and
 // ⌘S / Ctrl+S for the editable PDF.
@@ -614,6 +719,14 @@ app.addEventListener('pointerup', event => {
 const fromLink = new URLSearchParams(location.hash.slice(1)).get('answers');
 if (fromLink) answers = fromLink;
 render();
+void keeper.start();
+// Anything done on the page keeps the vault open; 15 minutes of nothing locks it (keep.js). A timer does not run while a
+// computer sleeps, so the time is looked at again whenever the page comes back into view, and every minute.
+for (const kind of ['pointerdown', 'keydown', 'input']) document.addEventListener(kind, () => keeper.touch(), true);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keeper.check(); });
+for (const kind of ['pageshow', 'focus']) window.addEventListener(kind, () => keeper.check());
+setInterval(() => keeper.check(), 60000);
+app.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.id === 'unlock-secret') { event.preventDefault(); void unlockDetails(); } });
 
 // Offline after the first visit: a service worker keeps the page's own files (built ones only).
 // When a newer version has been published, the old one must not linger: the page looks for it each time it is opened
@@ -627,7 +740,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD && location.protocol !=
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadOne || reloading) return;
-    if (!form && !answers.trim()) { reloading = true; location.reload(); return; }
+    if (!form && !answers.trim() && keeper.state !== 'open' && !keeper.recoveryKey) { reloading = true; location.reload(); return; }
     note = 'A newer version of Form Filler is ready. It opens the next time you open the page (or reload it now, after you download this form).'; render();
   });
 }

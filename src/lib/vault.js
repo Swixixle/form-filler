@@ -1,0 +1,254 @@
+// The vault: what is yours and secret (your details, your saved signature, the documents in your locker), encrypted
+// with age (age-encryption.org), a published format with a stock command-line tool, so every vault file is meant to
+// open with `age -d` even if Form Filler is gone (checked against the stock tool in slice 4).
+//
+//   vault.json          not secret: the format, when the vault was made, and the vault key's public half
+//   identity.age        the vault key itself, locked with your passphrase (the only file the passphrase touches)
+//   profile.age         your details and saved signature, locked to the vault key
+//   locker/index.age    the locker's list: each document's id, title, kind, name, date, size and SHA-256
+//   locker/<id>.age     one document's exact bytes
+//
+// Your passphrase unlocks the key (scrypt, at age's own work factor); the key unlocks everything else. So changing the
+// passphrase rewrites one small file, a backup can be made while the vault is locked (it needs only the public half),
+// and the key itself is the recovery key, shown once when the vault is made, to print or write down. The passphrase
+// is never kept. Changing it locks the same key again: an earlier copy of identity.age (a backup's, say) still opens
+// with the old one, so after a passphrase may have been seen, the way out is a new vault.
+//
+// Anyone who can write the vault's store could seal a file to its public half, which vault.json shows. So each record
+// also carries a tag only the vault key can make (HMAC-SHA-256 keyed from the key), and each document is checked
+// against the size and SHA-256 in the tagged list: a damaged file, one put in another's place, or one sealed by
+// someone else is refused, not used. What a tag cannot catch is an older genuine record put back in place of a newer.
+//
+// A vault lives in a store (stores/memory.js, stores/node.js, stores/browser.js): a few named files, each written whole.
+// The key and your details keep no earlier copy, so a forgotten signature or an old passphrase is gone from the store.
+import { Decrypter, Encrypter, generateX25519Identity, identityToRecipient } from 'age-encryption';
+import { hex, sha256 } from './hash.js';
+
+export const VAULT = 'vault.json', KEY = 'identity.age', PROFILE = 'profile.age', LOCKER = 'locker/index.age';
+// The shortest passphrase taken. Longer is much better: a few unrelated words are easy to remember and hard to guess.
+export const MIN_PASSPHRASE = 8;
+// The highest scrypt work factor (log2) a key file may ask for: age's own is 18, and anything far above is refused
+// before it is tried, so a planted key file cannot keep the page busy for minutes.
+const MAX_WORK = 20;
+const RECORD_LIMIT = 8 * 1024 * 1024;   // bytes in a sealed record: your details and a signature are a few kilobytes
+
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+const json = value => encoder.encode(JSON.stringify(value, null, 2) + '\n');
+const RECIPIENT = /^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$/, SECRET = /^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/, HEX64 = /^[0-9a-f]{64}$/;
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
+const pad = (value, width = 2) => String(value).padStart(width, '0');
+// A moment in local time with its offset: 2026-11-17T15:30:00-05:00.
+const localTime = date => {
+  const offset = -date.getTimezoneOffset(), size = Math.abs(offset);
+  return pad(date.getFullYear(), 4) + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':'
+    + pad(date.getSeconds()) + (offset < 0 ? '-' : '+') + pad(Math.floor(size / 60)) + ':' + pad(size % 60);
+};
+const newId = () => {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const digits = hex(bytes);
+  return [digits.slice(0, 8), digits.slice(8, 12), digits.slice(12, 16), digits.slice(16, 20), digits.slice(20)].join('-');
+};
+const fault = (code, message) => Object.assign(new Error(message), { code });
+
+// Your details are words, and a saved signature is a PNG picture and nothing else; anything else read back is dropped.
+export const cleanDetails = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string')) : {};
+export const cleanSignature = value => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) ? value : null;
+
+export function checkPassphrase(passphrase) {
+  if (typeof passphrase !== 'string' || passphrase.length < MIN_PASSPHRASE || !passphrase.trim())
+    throw fault('EWEAK', 'A passphrase needs at least ' + MIN_PASSPHRASE + ' characters; a few unrelated words are best.');
+  return passphrase;
+}
+
+// The key file inside identity.age, written as age-keygen writes one, so `age -d -o key.txt identity.age` gives a key
+// the stock tool takes with -i. It must hold exactly one key.
+const keyFile = (identity, recipient, made) => {
+  if (!TIME.test(made) || !RECIPIENT.test(recipient) || !SECRET.test(identity)) throw new Error('Not a key file this vault would write.');
+  return encoder.encode('# Form Filler vault key, made ' + made + '\n# public key: ' + recipient + '\n' + identity + '\n');
+};
+const keyIn = text => { const keys = String(text).match(/^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/gm) || []; return keys.length === 1 ? keys[0] : null; };
+
+// An age file's header, read before anything in it is decrypted, must be what this vault writes: one stanza, X25519 for
+// a record or a document, scrypt at a work factor this vault would use for the key file.
+function checkHeader(bytes, kind, what) {
+  const head = decoder.decode(bytes.subarray(0, 1200)), lines = head.split('\n'), stanzas = [];
+  const refuse = () => { throw fault('EFOREIGN', what + ' is not a file this vault wrote.'); };
+  if (lines[0] !== 'age-encryption.org/v1') refuse();
+  let end = 1;
+  for (; end < lines.length && !lines[end].startsWith('--- '); end++) if (lines[end].startsWith('-> ')) stanzas.push(lines[end].slice(3).split(' '));
+  if (end >= lines.length || stanzas.length !== 1) refuse();
+  const [type, ...args] = stanzas[0];
+  if (kind === 'key' ? type !== 'scrypt' || args.length !== 2 || !/^\d{1,2}$/.test(args[1]) || Number(args[1]) > MAX_WORK : type !== 'X25519' || args.length !== 1) refuse();
+}
+
+const sealTo = async (recipient, bytes) => { const encrypter = new Encrypter(); encrypter.addRecipient(recipient); return encrypter.encrypt(bytes); };
+const sealWith = async (passphrase, bytes, workFactor) => {
+  const encrypter = new Encrypter();
+  encrypter.setPassphrase(passphrase);
+  if (workFactor) encrypter.setScryptWorkFactor(workFactor);
+  return encrypter.encrypt(bytes);
+};
+
+function readInfo(bytes) {
+  let data;
+  try { data = JSON.parse(decoder.decode(bytes)); } catch { data = null; }
+  if (!data || data.formFiller !== 'vault' || data.version !== 1 || !RECIPIENT.test(data.recipient || '') || !TIME.test(data.made || '')) throw fault('EINFO', 'This vault\'s vault.json is not readable.');
+  return { formFiller: 'vault', version: 1, made: data.made, recipient: data.recipient };
+}
+
+// What the store says about its vault, from vault.json (nothing secret), or null when there is none.
+export async function vaultInfo(store) {
+  const bytes = await store.get(VAULT);
+  return bytes ? readInfo(bytes) : null;
+}
+
+// A new vault, unlocked: a new key, locked with the passphrase. Returns { vault, recoveryKey }. The recovery key is the
+// vault key itself ("AGE-SECRET-KEY-1…"): shown once, to be kept on paper; Form Filler keeps it nowhere but locked.
+// What a half-made vault left (files but no vault.json) is cleared first. `workFactor` is scrypt's (log2), for tests.
+export async function createVault(store, passphrase, { now = () => new Date(), workFactor } = {}) {
+  checkPassphrase(passphrase);
+  if (await store.get(VAULT)) throw new Error('There is already a vault here: unlock it, or forget it first.');
+  if ((await store.list()).length) await store.clear();
+  const identity = await generateX25519Identity(), recipient = await identityToRecipient(identity), made = localTime(now());
+  await store.put(KEY, await sealWith(passphrase, keyFile(identity, recipient, made), workFactor), { prev: false });
+  await store.put(VAULT, json({ formFiller: 'vault', version: 1, made, recipient }), { prev: false });
+  return { vault: unlocked(store, { formFiller: 'vault', version: 1, made, recipient }, identity, now), recoveryKey: identity };
+}
+
+// The vault unlocked, with its passphrase or with the recovery key. A wrong one is refused, saying so.
+export async function unlockVault(store, secret, { now = () => new Date() } = {}) {
+  const info = await vaultInfo(store);
+  if (!info) throw new Error('There is no vault here.');
+  const typed = String(secret ?? ''), key = typed.replace(/\s+/g, '').toUpperCase();
+  let identity;
+  if (key.startsWith('AGE-SECRET-KEY-1')) {
+    if (!SECRET.test(key)) throw fault('EPASSPHRASE', 'That recovery key is not whole: check it letter by letter.');
+    let recipient = null;
+    try { recipient = await identityToRecipient(key); } catch { /* a typing mistake the key's own check caught */ }
+    if (recipient !== info.recipient) throw fault('EPASSPHRASE', 'That recovery key does not open this vault: check it letter by letter.');
+    identity = key;
+  } else {
+    const sealed = await store.get(KEY);
+    if (!sealed) throw new Error('This vault\'s key (identity.age) is missing; only the recovery key can open it now.');
+    checkHeader(sealed, 'key', 'The vault\'s key file (identity.age)');
+    let text;
+    try { const decrypter = new Decrypter(); decrypter.addPassphrase(typed); text = await decrypter.decrypt(sealed, 'text'); }
+    catch { throw fault('EPASSPHRASE', 'That passphrase does not open this vault.'); }
+    identity = keyIn(text);
+    if (!identity || await identityToRecipient(identity) !== info.recipient) throw new Error('This vault\'s key file is not its own (identity.age does not match vault.json).');
+  }
+  return unlocked(store, info, identity, now);
+}
+
+// The whole vault forgotten: every file in its store, and every earlier copy. It cannot be brought back.
+export async function forgetVault(store) { await store.clear(); }
+
+function unlocked(store, info, identity, now) {
+  let key = identity, tagKey = null, queue = Promise.resolve();
+  const inTurn = work => (...args) => { const run = queue.then(() => work(...args)); queue = run.catch(() => {}); return run; };
+  const held = () => { if (!key) throw fault('ELOCKED', 'The vault is locked.'); return key; };
+  const stamp = () => localTime(now());
+  const subtle = globalThis.crypto.subtle;
+  // The tag key, made from the vault key (HKDF), never kept anywhere: only the unlocked vault can tag a record.
+  const tagging = async () => {
+    if (tagKey) return tagKey;
+    const base = await subtle.importKey('raw', encoder.encode(held()), 'HKDF', false, ['deriveKey']);
+    tagKey = await subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: encoder.encode('form-filler vault record v1') }, base, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign', 'verify']);
+    return tagKey;
+  };
+  const signed = (name, record) => encoder.encode(name + '\n' + JSON.stringify(record));
+  // Before anything is written: the store must still hold this vault (not one forgotten, or made again in another tab).
+  const guard = async () => {
+    let now = null;
+    try { now = await vaultInfo(store); } catch { now = null; }
+    if (!now || now.recipient !== info.recipient) { key = null; tagKey = null; throw fault('ECHANGED', 'The vault was forgotten or made again elsewhere (another tab or window): unlock it again.'); }
+  };
+  const write = async (name, fields, options) => {
+    const record = { formFiller: 'vault-record', version: 1, ...fields, saved: stamp() };
+    const tag = hex(await subtle.sign('HMAC', await tagging(), signed(name, record)));
+    await store.put(name, await sealTo(info.recipient, json({ ...record, tag })), options);
+    return record;
+  };
+  const open = async (name, what, kind) => {
+    const sealed = await store.get(name);
+    if (!sealed) return null;
+    held();
+    if (kind === 'record' && sealed.length > RECORD_LIMIT) throw fault('EFOREIGN', what + ' (' + name + ') is too large to be a file this vault wrote.');
+    checkHeader(sealed, kind, what + ' (' + name + ')');
+    try { const decrypter = new Decrypter(); decrypter.addIdentity(held()); return await decrypter.decrypt(sealed); }
+    catch { throw fault('EFOREIGN', what + ' (' + name + ') does not open with this vault\'s key: it is damaged, or from another vault.'); }
+  };
+  // A record read back must be tagged by this vault, for this name, and say it is the one asked for.
+  const read = async (name, kind, id, what) => {
+    const bytes = await open(name, what, 'record');
+    if (!bytes) return null;
+    let data;
+    try { data = JSON.parse(decoder.decode(bytes)); } catch { data = null; }
+    const { tag, ...record } = data || {};
+    const tagged = typeof tag === 'string' && HEX64.test(tag) && await subtle.verify('HMAC', await tagging(), Uint8Array.from(tag.match(/../g), pair => parseInt(pair, 16)), signed(name, record));
+    if (!tagged || record.formFiller !== 'vault-record' || record.version !== 1 || record.kind !== kind || record.id !== id)
+      throw fault('EFOREIGN', what + ' (' + name + ') is not what this vault wrote there: it was put there by something else, or in another file\'s place.');
+    return record;
+  };
+  const documents = async () => {
+    const index = await read(LOCKER, 'locker-index', 'locker', 'The locker\'s list');
+    if (!index) return [];
+    if (!Array.isArray(index.documents) || index.documents.some(entry => !entry || typeof entry.id !== 'string' || !HEX64.test(entry.sha256 || '') || !Number.isInteger(entry.bytes))) throw fault('EFOREIGN', 'The locker\'s list is not readable.');
+    return index.documents;
+  };
+  const profile = async () => {
+    const data = await read(PROFILE, 'profile', 'profile', 'Your details');
+    return data ? { details: cleanDetails(data.details), signature: cleanSignature(data.signature), saved: data.saved || null } : { details: {}, signature: null, saved: null };
+  };
+  return {
+    info, recipient: info.recipient,
+    get open() { return Boolean(key); },
+    // Your details and saved signature: { details, signature, saved }; empty until something is saved.
+    readProfile: inTurn(profile),
+    // A change to your details or your signature, or both: what is not given stays as the vault has it now (another
+    // tab may have saved since), and no earlier copy is kept. Returns what is now kept.
+    writeProfile: inTurn(async (change = {}) => {
+      held();
+      await guard();
+      if ('signature' in change && change.signature !== null && !cleanSignature(change.signature)) throw new Error('A saved signature is a PNG picture.');
+      const current = await profile().catch(error => { if (error.code === 'EFOREIGN') return { details: {}, signature: null }; throw error; });
+      const next = { details: 'details' in change ? cleanDetails(change.details) : current.details, signature: 'signature' in change ? change.signature : current.signature };
+      const record = await write(PROFILE, { kind: 'profile', id: 'profile', ...next }, { prev: false });
+      return { ...next, saved: record.saved };
+    }),
+    listDocuments: inTurn(documents),
+    // A document into the locker: its exact bytes in a file of its own, and its title, kind, name, size and SHA-256 in
+    // the locker's list.
+    addDocument: inTurn(async ({ title, kind = 'document', name = '', bytes } = {}) => {
+      held();
+      if (typeof title !== 'string' || !title.trim()) throw new Error('A locker document needs a title.');
+      if (!(bytes instanceof Uint8Array)) throw new Error('A locker document needs its bytes.');
+      await guard();
+      const entry = { id: newId(), title: title.trim(), kind: String(kind), name: String(name), added: stamp(), bytes: bytes.length, sha256: await sha256(bytes) };
+      const listed = await documents();
+      await store.put('locker/' + entry.id + '.age', await sealTo(info.recipient, bytes));
+      await write(LOCKER, { kind: 'locker-index', id: 'locker', documents: [...listed, entry] });
+      return entry;
+    }),
+    // A document's exact bytes, checked against its size and SHA-256 in the locker's list.
+    readDocument: inTurn(async id => {
+      const entry = (await documents()).find(item => item.id === id);
+      if (!entry) throw new Error('There is no document ' + id + ' in the locker.');
+      const bytes = await open('locker/' + id + '.age', 'The document "' + entry.title + '"', 'document');
+      if (!bytes) throw new Error('The document "' + entry.title + '" is missing from the locker.');
+      if (bytes.length !== entry.bytes || await sha256(bytes) !== entry.sha256) throw fault('EFOREIGN', 'The document "' + entry.title + '" is not the one put in the locker: it is damaged, or another was put in its place.');
+      return bytes;
+    }),
+    // A new passphrase: the key locked again with it, and no copy of the key file kept that the old one opens. (A copy
+    // kept elsewhere, such as in a backup, still does: see the note at the top.)
+    changePassphrase: inTurn(async (passphrase, { workFactor } = {}) => {
+      checkPassphrase(passphrase);
+      held();
+      await guard();
+      await store.put(KEY, await sealWith(passphrase, keyFile(held(), info.recipient, info.made), workFactor), { prev: false });
+    }),
+    // The key forgotten: nothing more is read or written until the vault is unlocked again.
+    lock() { key = null; tagKey = null; },
+  };
+}

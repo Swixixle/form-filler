@@ -25,6 +25,13 @@ for (const [path, name] of [
   ['node_modules/@huggingface/transformers/LICENSE', 'ort/Transformers.js.txt'],
   ['node_modules/pdf-lib/LICENSE.md', 'licenses/pdf-lib.txt'],
   ['node_modules/pdfjs-dist/LICENSE', 'licenses/pdf.js.txt'],
+  // The vault's encryption (age) and the cryptography it is built on, bundled into the page's vault chunk.
+  ['node_modules/age-encryption/LICENSE', 'licenses/age-encryption.txt'],
+  ['node_modules/@noble/ciphers/LICENSE', 'licenses/noble-ciphers.txt'],
+  ['node_modules/@noble/curves/LICENSE', 'licenses/noble-curves.txt'],
+  ['node_modules/@noble/hashes/LICENSE', 'licenses/noble-hashes.txt'],
+  ['node_modules/@noble/post-quantum/LICENSE', 'licenses/noble-post-quantum.txt'],
+  ['node_modules/@scure/base/LICENSE', 'licenses/scure-base.txt'],
 ]) {
   await cp(path, 'public/' + name).catch(error => { if (error.code !== 'ENOENT') throw error; });
 }

@@ -16,3 +16,5 @@ export { HANDWRITING_MODELS } from './models.js';
 export { sha256 } from './hash.js';
 // The archive works through a file interface it is handed: for Node, `nodeFiles` from 'form-filler/files/node'.
 export { INBOX, UNSORTED, FILING_THRESHOLD, cleanName, matterPath, localTime, readRecord, checkItem, itemsWithFile, openArchive } from './archive.js';
+// The vault keeps its files in a store it is handed: 'form-filler/stores/node', '…/browser' or '…/memory'.
+export { MIN_PASSPHRASE, checkPassphrase, cleanDetails, cleanSignature, vaultInfo, createVault, unlockVault, forgetVault } from './vault.js';

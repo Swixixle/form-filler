@@ -24,6 +24,27 @@ const fixtures = path.resolve(__dirname, '../tests/fixtures');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'form-filler-walk-'));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.gz': 'application/gzip', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
 const ANSWERS = 'Jane Roe. 11/13/2026. Respiratory Care\nVentilator. VNT-2219. 1\nOximeter. OX-77. 2\n-. x\nReturn by Friday. J. R. Smith';
+// The invented passphrase the walk locks the invented details with, and the recovery key the page gives back.
+const PASSPHRASE = 'invented horse battery staple';
+let recoveryKey = '';
+// A page unlocked again, once Lock now in another tab has locked it too (it locks every tab).
+const unlockAgain = async (target, secret) => {
+  await target.waitForSelector('#unlock-secret');
+  await target.fill('#unlock-secret', secret); await target.click('#unlock');
+  await target.waitForSelector('[name=detail-fullName]');
+};
+// What this browser holds for the page: localStorage as text, and each file of the vault in IndexedDB as text.
+const held = target => target.evaluate(async () => ({
+  plain: Object.entries(localStorage).map(([key, value]) => key + '=' + value).join('\n'),
+  files: await new Promise((done, failed) => {
+    const opening = indexedDB.open('form-filler-vault');
+    opening.onerror = () => failed(opening.error);
+    opening.onsuccess = () => {
+      const tx = opening.result.transaction('files'), files = tx.objectStore('files'), keys = files.getAllKeys(), values = files.getAll();
+      tx.oncomplete = () => done(keys.result.map((key, index) => [String(key), new TextDecoder().decode(values.result[index])]));
+    };
+  }),
+}));
 const HF = /^https:\/\/([a-z0-9-]+\.)*(huggingface\.co|hf\.co)\//;
 const results = [];
 const step = async (name, work) => { try { await work(); results.push([true, name]); console.log('PASS  ' + name); } catch (error) { results.push([false, name]); console.log('FAIL  ' + name + '\n        ' + String(error.message).split('\n').slice(0, 8).join('\n        ')); } };
@@ -149,7 +170,12 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
   });
   await step('your details and today\'s date fill their blanks, and typed answers pass over them', async () => {
     await page.locator('#details-panel summary').click();
-    await page.fill('[name=detail-fullName]', 'Jane Roe'); await page.click('#save-details');
+    await page.fill('[name=detail-fullName]', 'Jane Roe');
+    await page.fill('[name=passphrase]', PASSPHRASE); await page.fill('[name=passphrase-again]', PASSPHRASE);
+    await page.click('#save-details');
+    recoveryKey = (await (await page.waitForSelector('#recovery-key code')).innerText()).replace(/\s+/g, '');
+    assert.match(recoveryKey, /^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/, 'the recovery key is shown once');
+    await page.click('#key-kept');
     await page.check('#use-details');
     await typeAnswers('Respiratory Care\nVentilator');
     const now = await values();
@@ -160,6 +186,32 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     assert.deepEqual((await values()).slice(1, 3), ['12/01/2026', 'Respiratory Care'], 'a numbered answer still goes where it says');
     await shot('form-3-details');
   });
+  await step('your details are kept only locked: nothing of them in plain text in this browser, and on a new visit they open with the passphrase or the recovery key', async () => {
+    const kept = await held(page);
+    assert.ok(!kept.plain.includes('Jane Roe'), 'no detail in plain text in localStorage');
+    assert.deepEqual(kept.files.map(([name]) => name).sort(), ['identity.age', 'profile.age', 'vault.json']);
+    for (const [name, data] of kept.files) {
+      if (name !== 'vault.json') assert.ok(data.startsWith('age-encryption.org/v1\n'), name + ' is an age file');
+      assert.ok(!data.includes('Jane Roe'), name + ' holds nothing of you in plain text');
+    }
+    const again = await context.newPage();
+    try {
+      await again.goto(origin);
+      await again.waitForSelector('#unlock-secret');
+      assert.equal(await again.locator('[name=detail-fullName]').count(), 0, 'locked: no detail on the page');
+      await again.fill('#unlock-secret', 'not the passphrase'); await again.click('#unlock');
+      await again.waitForFunction(() => /does not open your details/.test(document.body.innerText));
+      await again.fill('#unlock-secret', PASSPHRASE); await again.press('#unlock-secret', 'Enter');
+      await again.waitForSelector('[name=detail-fullName]');
+      assert.equal(await again.inputValue('[name=detail-fullName]'), 'Jane Roe');
+      await again.click('#lock-now');
+      await again.waitForSelector('#unlock-secret');
+      await again.fill('#unlock-secret', recoveryKey.toLowerCase()); await again.click('#unlock');
+      await again.waitForSelector('[name=detail-fullName]');
+      assert.equal(await again.inputValue('[name=detail-fullName]'), 'Jane Roe', 'the recovery key opens them too');
+    } finally { await again.close(); }
+    await unlockAgain(page, PASSPHRASE);   // Lock now there locked this page too
+  });
   await step('signing: drawn with a finger in the pad, placed as a picture in the Signature blank', async () => {
     await typeAnswers('Respiratory Care');
     await page.locator('[data-sign]').first().click();
@@ -168,14 +220,62 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     for (const [x, y] of [[0.2, 0.3], [0.3, 0.7], [0.45, 0.25], [0.6, 0.7], [0.8, 0.4]]) await page.mouse.move(pad.x + pad.width * x, pad.y + pad.height * y, { steps: 6 });
     await page.mouse.up();
     await shot('form-4-sign');
+    assert.equal(await page.isEnabled('dialog.pad [name=keep]'), true, 'with your details unlocked, the signature can be kept');
+    await page.check('dialog.pad [name=keep]');
     await page.click('dialog.pad button[value=use]');
     await page.waitForSelector('.blank img.signed');
+    await page.waitForSelector('img.saved-sign');
+    const kept = await held(page);
+    assert.ok(!/ff:signature|data:image/.test(kept.plain), 'the kept signature is not in plain text in localStorage');
+    assert.ok(kept.files.every(([, data]) => !data.includes('data:image')), 'nor anywhere in the vault in plain text');
     const editable = await save('#pdf-edit', 'signed.pdf'), bytes = fs.readFileSync(editable).toString('latin1');
     assert.equal((await fieldsOf(editable)).length, 12, 'the signature is a picture, not one of the fields');
     assert.equal((bytes.match(/\/Subtype \/Image/g) || []).length, 3, 'the page picture, the signature and its see-through mask');
     assert.match(bytes, /\/SMask/);
     await page.click('.blank .unsign');
     assert.equal(await page.locator('.blank img.signed').count(), 0);
+  });
+  await step('a kept signature comes back on a new visit, locked with your details; "Forget it" forgets it there, and on the next visit', async () => {
+    const again = await context.newPage();
+    try {
+      await again.goto(origin);
+      await again.waitForSelector('#unlock-secret');
+      assert.equal(await again.locator('img.saved-sign').count(), 0, 'not shown while locked');
+      await again.fill('#unlock-secret', PASSPHRASE); await again.click('#unlock');
+      await again.waitForSelector('img.saved-sign');
+      await again.click('#forget-signature');
+      await again.waitForFunction(() => !document.querySelector('img.saved-sign') && /saved signature is forgotten/.test(document.body.innerText));
+      const kept = await held(again);
+      assert.equal(kept.files.some(([name]) => name.endsWith('.prev')), false, 'no earlier copy kept that still holds it');
+      await again.reload();
+      await again.waitForSelector('#unlock-secret');
+      await again.fill('#unlock-secret', PASSPHRASE); await again.click('#unlock');
+      await again.waitForSelector('[name=detail-fullName]');
+      assert.equal(await again.locator('img.saved-sign').count(), 0, 'and it does not come back');
+      assert.equal(await again.inputValue('[name=detail-fullName]'), 'Jane Roe', 'your details are as they were');
+    } finally { await again.close(); }
+  });
+  await step('a new passphrase: the old one is refused, the new one and the recovery key open, and no earlier key file is kept', async () => {
+    const again = await context.newPage(), changed = 'another invented passphrase';
+    try {
+      await again.goto(origin);
+      await again.waitForSelector('#unlock-secret');
+      await again.fill('#unlock-secret', PASSPHRASE); await again.click('#unlock');
+      await again.waitForSelector('[name=detail-fullName]');
+      await again.locator('#details-panel details.more summary').click();
+      await again.fill('[name=passphrase-change]', changed); await again.fill('[name=passphrase-change-again]', changed);
+      await again.click('#change-passphrase');
+      await again.waitForFunction(() => /passphrase is changed/.test(document.body.innerText));
+      assert.equal((await held(again)).files.some(([name]) => name === 'identity.age.prev'), false);
+      for (const [secret, opens] of [[PASSPHRASE, false], [changed, true], [recoveryKey, true]]) {
+        if (await again.locator('#lock-now').count()) await again.click('#lock-now');
+        await again.waitForSelector('#unlock-secret');
+        await again.fill('#unlock-secret', secret); await again.click('#unlock');
+        if (opens) await again.waitForSelector('[name=detail-fullName]');
+        else await again.waitForFunction(() => /does not open your details/.test(document.body.innerText));
+      }
+    } finally { await again.close(); }
+    await unlockAgain(page, changed);
   });
   await step('a PDF with its own fields: those are the blanks, plus the drawn signature line; the same fields are filled', async () => {
     await openForm('fillable.pdf', 'fillable.pdf');
@@ -416,7 +516,7 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     // The browser's storage is shared by every page at the same site address, so another page could have written it.
     const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
     try {
-      await fresh.addInitScript(() => { try { localStorage.setItem('ff:signature', JSON.stringify('x" onerror="window.planted = 1" alt="')); localStorage.setItem('ff:profile', JSON.stringify({ fullName: ['not', 'text'], email: 'jane@example.org' })); localStorage.setItem('ff:detailsOpen', 'true'); } catch { /* no storage */ } });
+      await fresh.addInitScript(() => { try { localStorage.setItem('ff:signature', JSON.stringify('x" onerror="window.planted = 1" alt="')); localStorage.setItem('ff:profile', JSON.stringify({ fullName: ['not', 'text'], email: 'jane@example.org' })); } catch { /* no storage */ } });
       const other = await fresh.newPage();
       await other.goto(origin);
       await other.waitForSelector('#details-panel[open]');
@@ -425,6 +525,18 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
       assert.equal(await other.locator('img.saved-sign').count(), 0, 'and it is not offered as a saved signature');
       assert.equal(await other.inputValue('[name=detail-fullName]'), '', 'a detail that is not text is dropped');
       assert.equal(await other.inputValue('[name=detail-email]'), 'jane@example.org', 'a detail that is text is kept');
+      // Plain copies from an earlier version: said at the top of the page and in the panel (opened for it), and gone
+      // once locked away with a passphrase.
+      assert.ok(await other.isVisible('#plain-details'), 'said at the top of the page');
+      assert.match(await other.locator('#plain-details').innerText(), /An earlier version kept your details in this browser in plain text/);
+      assert.match(await other.locator('#details-panel').innerText(), /An earlier version of this page kept these details in this browser in plain text/);
+      await other.fill('[name=passphrase]', PASSPHRASE); await other.fill('[name=passphrase-again]', PASSPHRASE);
+      await other.click('#save-details');
+      await other.waitForSelector('#recovery-key');
+      const kept = await held(other);
+      assert.ok(!/ff:profile|ff:signature|example\.org/.test(kept.plain), 'the plain copies are gone: ' + kept.plain);
+      assert.ok(kept.files.every(([, data]) => !data.includes('example.org')), 'and the vault holds them locked');
+      assert.equal(await other.inputValue('[name=detail-email]'), 'jane@example.org', 'nothing was lost');
     } finally { await fresh.close(); }
   });
   await step('on a computer: a form dropped on the page opens, the answers box is ready to type in, and it sits beside the form', async () => {
@@ -498,6 +610,37 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.click('#add-mode'); await page.click('[data-remove="' + dayId + '"]'); await page.click('#add-mode');
     assert.match(await listing(), /10 → its blank was removed/);
     assert.ok(await page.locator('#merge-go').isDisabled(), 'no copies to make with no column matched');
+  });
+  await step('the page will not run inside another page, where that page could read what is typed', async () => {
+    const framed = await context.newPage();
+    try {
+      await framed.setContent('<iframe src="' + origin + '" style="width:390px;height:600px"></iframe>');
+      const frame = await (await framed.waitForSelector('iframe')).contentFrame();
+      await frame.waitForFunction(() => /does not run inside another page/.test(document.body.innerText));
+      assert.equal(await frame.locator('#unlock-secret, [name=detail-fullName], #answers').count(), 0, 'no box to type in');
+    } finally { await framed.close(); }
+  });
+  await step('Forget my details: asked twice, then the vault and every plain copy are gone from this browser', async () => {
+    const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    try {
+      const other = await fresh.newPage();
+      await other.goto(origin);
+      await other.locator('#details-panel summary').click();
+      await other.fill('[name=detail-fullName]', 'Jane Roe');
+      await other.fill('[name=passphrase]', PASSPHRASE); await other.fill('[name=passphrase-again]', PASSPHRASE);
+      await other.click('#save-details');
+      await other.waitForSelector('#key-kept'); await other.click('#key-kept');
+      assert.equal((await held(other)).files.length, 3);
+      await other.click('#forget-details');
+      await other.waitForSelector('#forget-yes');
+      assert.match(await other.locator('#details-panel').innerText(), /for good: they cannot be brought back/);
+      await other.click('#forget-yes');
+      await other.waitForFunction(() => /forgotten on this device/.test(document.body.innerText));
+      const kept = await held(other);
+      assert.deepEqual(kept.files, [], 'nothing left in the vault');
+      assert.ok(!/ff:profile|ff:signature|Jane Roe/.test(kept.plain), 'and nothing in plain storage');
+      assert.equal(await other.locator('[name=passphrase]').count(), 1, 'it starts again from nothing');
+    } finally { await fresh.close(); }
   });
   await step('nothing was sent anywhere' + (handwriting ? ' (only the handwriting model fetched from Hugging Face; no code CDN)' : ''), async () => {
     assert.deepEqual(outside.filter(url => !(handwriting && HF.test(url))), []);

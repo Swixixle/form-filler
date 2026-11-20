@@ -1,5 +1,31 @@
 # Changes
 
+## 2.6.0 (2026-11-20)
+
+- **Your details and saved signature are kept locked** (phase 2, slice 3; the privacy wall's part 6). The page used to
+  keep them in this browser's storage in plain text, where any page published at the same web address could read
+  them. Now they are kept in an encrypted vault in the browser, locked with a passphrase you choose. Saving your
+  details the first time asks for the passphrase (twice) and shows a recovery key once, to print or write down: the
+  only way back in if the passphrase is forgotten. On a later visit your details are locked until you unlock them; they
+  lock again when you close the page or leave it alone for 15 minutes. *Lock now*, *Change my passphrase* and *Forget
+  my details* (asked twice) are beside them. The signing pad keeps a signature only while your details are unlocked.
+- Details an earlier version kept in plain text are used as before, with a note at the top of the page saying so,
+  until you lock them away with a passphrase or forget them; then the plain copies are gone. Plain copies found beside
+  a vault are never used (this version never writes them): they can only be forgotten.
+- What the vault cannot stop is said plainly (README, Privacy): another page at the same web address can still script
+  this one while it is open. Against that, the page now refuses to run inside another page or in a window another
+  page opened, and its service worker serves a kept file only while it matches the fingerprint its build wrote.
+- Two tabs keep to one vault: each hears when another makes, changes, locks or forgets it, and a tab whose vault was
+  forgotten under it is refused when it writes. The idle lock counts the clock, so a computer that slept comes back
+  locked. *Forget it* forgets a saved signature everywhere it was kept. Remembered forms no longer keep the file's name.
+- **The vault** (`src/lib/vault.js`), for the page now and the Mac app next: an age key pair made on first use,
+  locked with the passphrase (scrypt); your details and signature, and a locker of documents with each one's SHA-256,
+  locked to the key. Every file is a standard age file, meant to open with the stock `age` tool (checked in slice 4).
+  Each record also carries a tag only the vault key can make, so a damaged or swapped file, or one sealed by someone
+  else to the public key, is refused. It keeps its files in a store: in memory, in a folder, or in a browser's
+  IndexedDB.
+- `age-encryption` 0.3.1 is now a dependency, pinned; it loads only when your details are used.
+
 ## 2.5.0 (2026-11-20)
 
 - **The archive, as a library and on the command line** (phase 2, slice 2). A plain folder of everything that came

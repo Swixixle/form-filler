@@ -25,7 +25,12 @@ function serviceWorker() {
       walk(out);
       const keep = files.filter(file => file !== 'sw.js' && !file.startsWith('ort/') && !file.endsWith('.txt')).sort();
       const hash = createHash('sha256'); for (const file of keep) hash.update(file).update(readFileSync(join(out, file)));
-      const version = hash.digest('hex').slice(0, 16), source = readFileSync('src/app/sw.js', 'utf8').replace('__VERSION__', version).replace('[/*__FILES__*/]', JSON.stringify(['./', ...keep.map(file => './' + file)]));
+      // Every file's SHA-256, so the worker serves a kept copy only while it is still the one built (src/app/sw.js).
+      const print = file => createHash('sha256').update(readFileSync(join(out, file))).digest('hex');
+      const prints = Object.fromEntries(files.filter(file => file !== 'sw.js' && !file.endsWith('.txt')).sort().map(file => ['./' + file, print(file)]));
+      prints['./'] = prints['./index.html'];
+      const version = hash.digest('hex').slice(0, 16), source = readFileSync('src/app/sw.js', 'utf8').replace('__VERSION__', version).replace('[/*__FILES__*/]', JSON.stringify(['./', ...keep.map(file => './' + file)]))
+        .replace('{/*__PRINTS__*/}', JSON.stringify(prints));
       writeFileSync(join(out, 'sw.js'), source);
     },
   };

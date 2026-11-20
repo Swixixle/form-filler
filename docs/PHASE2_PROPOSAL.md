@@ -62,6 +62,14 @@ Part 6 adds one thing to this proposal's scope: the vault module must run in a b
 already written against a small storage interface, so this is one more adapter (the browser's IndexedDB), not a second
 vault.
 
+Found in slice 3's review (2026-11-20), and corrected here: encryption with a passphrase keeps other pages at the same
+address from *reading* your details out of storage, but not from *scripting* the page while it is open. A page there
+can open Form Filler in a frame or in a window it holds and read what is typed, or rewrite the copy the service worker
+keeps (they share its cache). The page now refuses to run in a frame or a window another page there holds, and the
+service worker serves a kept file only while it matches its build's fingerprint; that leaves a page there able to
+delete or replace the vault's files, and to guess at the passphrase against a copy of the key file. Only an address of
+its own closes this off: a custom domain for this site, or a GitHub Pages site of its own. That is the owner's choice.
+
 ## Slice 0: fix the ground first
 
 The shell renders pages with the Mac's own WebKit. The inventory found, in a WebKit build **[V]**:
@@ -292,6 +300,19 @@ settings.json         where the archive is, when the last backup ran
   crash mid-write loses nothing **[I]** that rename is atomic on the Mac's file system.
 - Each decrypted record says what it is (its kind and id), and the index holds each document's SHA-256, so a swapped
   or damaged file is noticed.
+
+As built (2.6.0): as above, with these choices made on the way, several of them from review.
+- The key is age's classic X25519 kind, which every version of the stock tool reads (not the newer post-quantum kind).
+- Anyone who can write the store could seal a file to the public half that vault.json shows, so each record also
+  carries an HMAC-SHA-256 tag keyed from the vault key (through HKDF), and a record without a good tag is refused.
+  Putting an older genuine record back in place of a newer is not caught.
+- `identity.age` and `profile.age` keep no `.prev`, so a forgotten signature is gone from the store and the store's
+  copy of the key opens only with the new passphrase. A copy of `identity.age` kept elsewhere (a backup) still opens
+  with the old one: changing the passphrase locks the same key again. After a passphrase may have been seen, the way
+  out is a new vault (Forget, then save again).
+- Every write first checks that vault.json still names this vault's key, so a tab left open cannot write over a vault
+  forgotten and made again elsewhere.
+- In the browser the files are kept in IndexedDB, one record each; the passphrase needs at least 8 characters.
 
 ### What it protects against, and what it does not
 
@@ -555,7 +576,7 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
 | 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
 | 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand. **Built** (2026-11-20, 2.5.0): `src/lib/archive.js`, the file interface over Node, and `form-filler archive add`, `file`, `move`, `index`, `verify`; the hand check is yours |
-| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text |
+| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text. **Built** (2026-11-20, 2.6.0): `src/lib/vault.js` with stores in memory, in a folder and in IndexedDB; the page keeps your details and signature in it, and the walk checks in both engines that nothing of them is in plain text. Pages at the same address can still script the page while it is open (see "The privacy wall in phase 2"): an address of its own is the owner's choice. The locker has no screen yet (slice 5), and the stock-`age` check waits with slice 4 |
 | 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |
 | 5 | The shell: setup, unlock, locker, archive list, export into the archive, backup and restore screens, with never-list fields masked (privacy wall, part 5) | Large | You can do all of it by clicking |
 | 6 | Your drill on a real document | Yours | Wipe, restore, everything comes back |
