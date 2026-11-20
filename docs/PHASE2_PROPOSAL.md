@@ -2,12 +2,14 @@
 
 Written 2026-11-17, after the inventory ([INVENTORY.md](INVENTORY.md)), for the plan in [BUILD_PLAN.md](BUILD_PLAN.md).
 It was written as a proposal. **Status, evening of 2026-11-17:** approved, with the rulings recorded under
-[Decisions](#decisions-ruled-2026-11-17). On branch `phase-2` the never-list gate and slice 0 are built and tested;
-the Tauri shell, vault, archive and backup are not started.
+[Decisions](#decisions-ruled-2026-11-17). On branch `phase-2` the never-list gate and slice 0 are built and tested.
+Slice 1, the throwaway shell spike, ran on 2026-11-20 ([SHELL_SPIKE.md](SHELL_SPIKE.md)); the Tauri shell itself,
+vault, archive and backup are not started.
 
-Marks: **[V]** verified in this session: run here, or read today on the page linked. (The Tauri and age pages were
-read by a fetch helper whose report is relayed here; none of that software has been run.) **[I]** inferred, to be
-confirmed before it is relied on.
+Marks: **[V]** verified: run here, read here in the code named, or read on the page linked. (The Tauri and age pages
+were read by a fetch helper whose report is relayed here. The shell spike of 2026-11-20 then ran Tauri, built with
+plain `cargo`, and `age-encryption` in its webview; Tauri's command-line tool and the stock `age` tool have not been
+run.) **[I]** inferred, to be confirmed before it is relied on.
 
 ## The proposal in one paragraph
 
@@ -128,8 +130,9 @@ What was learned on the way:
   each button from the words after it (`nameOptions` does that from the text reader's words). Not tried on a real
   form. Known limit: two lone capital O's of one size on one line, each standing apart, would pass for a set.
 
-Still not verified: real Safari, an iPhone, the Tauri window, any real form. The CI changes (the gate step, the
-WebKit job on a Mac runner) cannot run until the branch is pushed. **[I]** that they work.
+Still not verified: real Safari, an iPhone, any real form, and the walk in the Tauri window; the shell spike
+(2026-11-20) opened the page there and read the invented `form.pdf`, 13 blanks found as in the walk **[V]**. The CI
+changes (the gate step, the WebKit job on a Mac runner) now run on GitHub and pass **[V]**.
 
 ## Tauri setup
 
@@ -148,7 +151,8 @@ Facts read today on <https://v2.tauri.app> and the package registries **[V]**:
 | Watching a folder | JS `watch` / `watchImmediate`, Cargo feature `watch` (needed in phase 5, not now) |
 
 What a build machine needs **[V]**: the Xcode Command Line Tools, Rust 1.90 or later installed through `rustup`, and
-Node 22 or later. Nothing Tauri has been built yet.
+Node 22 or later. Nothing Tauri has been built yet beyond the throwaway shell spike, with plain `cargo`
+([SHELL_SPIKE.md](SHELL_SPIKE.md)).
 
 How it maps onto this repository:
 
@@ -164,14 +168,21 @@ How it maps onto this repository:
 Things the fetched pages did **not** state, and what the shell spike found (2026-11-20, [SHELL_SPIKE.md](SHELL_SPIKE.md)):
 
 - The Mac webview is WKWebView, and the built app loads from `tauri://localhost`. **[V]**
-- A service worker does not register there: WebKit wants an http or https address for one. **[V]** As planned, the
-  shell registers none; it exists to make a web page work offline, and the shell is already offline.
-- pdf.js's worker and Tesseract's worker files and WebAssembly load from that address: a PDF opens and is read.
-  **[V]** The ONNX WebAssembly (handwriting) was not tried.
+- A service worker does not register there: WebKit wants an http or https address for one. The page tries anyway and
+  carries on without it. **[V]** The plan stands: the shell will skip it, since a service worker exists to make a web
+  page work offline and the shell is already offline.
+- Tesseract's worker files and WebAssembly load from that address, and pdf.js works there: a PDF opens and is read.
+  **[V]** Whether pdf.js runs its worker as a worker there, or in its fallback on the page, was not checked. The
+  handwriting reader (its worker and its ONNX WebAssembly) was not tried.
 - `persisted-scope` keeps a granted folder allowed after a restart. **[V]** The dialog grants a picked folder with the
-  same call. **[V]** from its source; a real click was not run.
-- A locally built, unsigned program runs on the Mac that built it. **[V]** for the bare program from the terminal;
-  a bundled `.app` opened from the Finder was not tried.
+  same `allow_directory`, on the same app-wide scope, but lets in subfolders only when the page asks
+  (`recursive: true`), which the archive's nested folders need. **[V]** from its source (`tauri-plugin-dialog`
+  2.8.4, `commands.rs`); a real click was not run. A default folder taken without a pick still needs the Rust grant.
+- A locally built program runs on the Mac that built it with no developer's signature, only the ad-hoc one the linker
+  adds. **[V]** for the bare program from the terminal; a bundled `.app` opened from the Finder was not tried.
+- Found in the code, not run (**[V]** from source): a folder grant does not reach names that start with a dot on
+  macOS unless the fs plugin is set to `requireLiteralLeadingDot: false`, which the archive's `.formfiller/` needs;
+  and a strict content policy must allow `ipc:` in `connect-src`, or Tauri sends every call as JSON, bytes included.
 
 ## Where the logic lives
 
@@ -200,7 +211,9 @@ What it costs, said plainly:
   image address, which comes from the browser's own storage; in the shell it will come from the vault. The shell will
   load no remote content, under a strict content-security policy. If that is not enough, decryption can move into Rust using the `age` crate with **no change
   to any file on disk**, because the format is a standard **[I]**.
-- **Big files through the webview may be slow.** See the backup section; there is a measured fallback.
+- **Big files through the webview.** `FileHandle.write` is slow and `writeFile` appends of bytes are not: 2 GB took
+  135 s one way and 1.0 s the other **[V]** (see the backup section). The Rust fallback described there was neither
+  built nor timed; at 2 GB it was not needed.
 
 ## Vault encryption scheme
 
@@ -218,7 +231,9 @@ Its author maintains a JavaScript implementation:
 | Large files | Yes, encrypts and decrypts `ReadableStream`s |
 | Depends on | The noble cryptography libraries and `@scure/base` |
 
-It has **not been run here yet**; the first spike does that.
+The shell spike ran it in the webview on 2026-11-20 ([SHELL_SPIKE.md](SHELL_SPIKE.md)): 16 MB with a passphrase and
+with a key pair, a 64 MB stream, and 2 GB through the backup's loop, sealed and opened again **[V]**. It has not been
+checked against the stock `age` tool, which is on hold.
 
 Why a standard format rather than encryption written here with the browser's built-in crypto:
 
@@ -422,19 +437,24 @@ Design points:
 A snapshot may be gigabytes (photos and scans add up). The JavaScript library streams **[V]**. Whether Tauri's file
 plugin could stream that much through the webview at a usable speed was **[I]**; the spike found that it can (below).
 
-Plan: write `backup.js` against the file interface, where Node's streams make it easy to test. In the spike, push a
-2 GB dummy archive through the real shell and time it. If it is too slow or too hungry, the same loop moves into one
-Rust command using the `tar` and `age` crates. The file format, the tests and the restore instructions do not change.
+Plan: write `backup.js` against the file interface, where Node's streams make it easy to test. If a real backup proves
+too slow or too hungry, the same loop moves into one Rust command using the `tar` and `age` crates. The file format,
+the tests and the restore instructions do not change.
 
-What the spike measured, in an optimised build (SHELL_SPIKE.md):
-- Writing 2 GB with `writeFile` appends took 1.0 s; the same through `FileHandle.write`, whose bytes travel inside
-  JSON, took 135 s.
-- The whole loop, sealed with `age` as it is made and written with `writeFile` appends, took 9.8 s for 2 GB. Reading it
-  back and opening it took 9.2 s; `age` checked every piece, and all 2 GB came back.
-- Memory peaked at 350 MB in the page's process and 126 MB in the program.
+What the spike measured, in an optimised build, through its throwaway shell (SHELL_SPIKE.md). The 2 GB was one 8 MB
+piece of random bytes sent 256 times, not an archive: there was no `tar` and no hashing.
+- Writing 2 GB with `writeFile` appends of 8 MB byte arrays took 1.0 s; the same through `FileHandle.write`, whose
+  bytes travel as JSON, took 135 s.
+- Sealing 2 GB with `age` as the page made it, and writing it with `writeFile` appends, took 9.8 s. Reading it back
+  and opening it took 9.2 s; `age` checked every piece, and all 2 GB came back.
+- Memory, sampled every half second during those two loops: the highest readings were 350 MB in the page's WebKit
+  process and 126 MB in the program. A peak shorter than half a second could be missed.
 
-So it is neither too slow nor too hungry: the loop stays in JavaScript, and writes with `writeFile` appends, never
-`FileHandle.write`. **[V]** for 2 GB; **[I]** for much larger archives.
+So at 2 GB it is neither too slow nor too hungry: the loop stays in JavaScript, gathers what `age` gives out into byte
+arrays (8 MB in the spike), and writes them with `writeFile` appends, never `FileHandle.write`. It must not hand
+`writeFile` the stream itself: given a stream, `writeFile` writes it with `FileHandle.write` (**[V]** in the plugin's
+code). **[V]** for 2 GB on this Mac's own disk; **[I]** for `tar`, hashing, much larger archives and a backup drive,
+and the speeds may include the operating system's cache.
 
 ### The backup and restore test
 
@@ -523,7 +543,7 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | --- | --- | --- | --- |
 | – | **Never-list gate** (privacy wall, part 2) | Small | **Done.** A commit carrying a never-list value is refused, on the Mac and on GitHub |
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
-| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, and the handwriting reader's files |
+| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
 | 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand |
 | 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text |
 | 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |
@@ -547,12 +567,15 @@ Work happens on `phase-2-…` branches. `main` stays releasable throughout.
 
 ## Risks
 
-1. **WebKit.** The largest unknown. The reader's defects there are proven; whether the workers and WebAssembly load
-   inside the shell is not. Slice 0 and the spike exist to settle this before anything is built on it.
+1. **WebKit.** The reader's defects there were proven, and slice 0 fixed them. The spike then opened and read a PDF
+   in the shell: pdf.js works there, and the text reader's worker and WebAssembly load there **[V]**. Not settled yet:
+   whether pdf.js runs its own worker there, the handwriting reader's worker and ONNX WebAssembly, and any of it under
+   the strict content policy the shell is to have (the spike ran with none).
 2. **A forgotten passphrase.** Encryption that works has no back door. Decision 3.
 3. **The archive is plain text on disk.** A folder that a cloud service syncs would upload it; hence the default
    location and the warning. Decisions 1 and 2.
-4. **Big backups through the webview.** Measured in the spike, with a Rust fallback that changes no file format.
+4. **Big backups through the webview.** Measured in the spike: at 2 GB, about 10 s each way, written as byte arrays
+   with `writeFile` appends. A Rust fallback that changes no file format stays in reserve.
 5. **The key lives in the webview while unlocked.** Mitigated by a strict content policy and no remote content;
    movable to Rust later.
 6. **`age-encryption` is version 0.3.** Its interface may still change; pin the exact version. The file format it
