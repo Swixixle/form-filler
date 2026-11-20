@@ -6,7 +6,7 @@ import { buildPdf, joinPdfs, isSignature } from '../lib/output.js';
 import { readFields, withFound, pickOption } from '../lib/fields.js';
 import { makeTemplate, readTemplate } from '../lib/templates.js';
 import { DETAILS, autofill, isSignatureLabel } from '../lib/profile.js';
-import { parseCsv, matchColumns, rowValues } from '../lib/merge.js';
+import { parseCsv, matchColumns, columnIds, columnsNow, rowValues } from '../lib/merge.js';
 import { segmentLines } from '../lib/handwriting.js';
 import { HANDWRITING_MODELS } from '../lib/models.js';
 
@@ -33,7 +33,7 @@ let answers = '', overrides = {}, busy = '', note = '', adding = false, prints =
 const asSignature = value => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) ? value : null;
 const asDetails = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string')) : {};
 let useDetails = store.get('useDetails', true) !== false, profile = asDetails(store.get('profile', {})), savedSignature = asSignature(store.get('signature', null));
-let merge = null;         // { name, headers, rows, columns, unmatched, shared }
+let merge = null;         // { name, headers, rows, columns, unmatched, shared, ids }: columns as matched when opened; ids keep them to their blanks
 let hand = null;          // { lines: [{ img, text, done }], model }
 let pendingTemplate = null, pendingMark = null;
 // 2 when the open form's blanks were named this version's way (a checkbox by its own caption, on either side): set
@@ -319,9 +319,16 @@ function mergePanel() {
   return '<details class="panel" id="merge-panel"' + (merge ? ' open' : '') + '><summary><h2>Many copies from a spreadsheet</h2></summary>' +
     '<p class="subtle">One filled copy of this form for each row of a spreadsheet saved as CSV. A column fills the blank it names: by number (“3”), by label (“Name”), or by the PDF field’s own name. Blanks no column names keep what is on the form now.</p>' +
     '<div class="tools"><button type="button" id="csv-blank" class="secondary">Get a CSV with this form’s columns</button><label class="pick small">Open a CSV<input id="csv-file" type="file" accept=".csv,text/csv"></label></div>' +
-    (merge ? '<p>' + h(merge.name) + ': ' + merge.rows.length + ' row' + (merge.rows.length === 1 ? '' : 's') + '.</p><ul class="columns">' + merge.headers.map((header, index) => '<li><b>' + h(header || '(no heading)') + '</b> → ' +
-      (merge.columns[index] === null ? '<span class="miss">' + (merge.shared.includes(header) ? 'two blanks have this label: use the blank’s number instead' : 'matches no blank') + '</span>' : 'blank ' + (merge.columns[index] + 1) + (blanks[merge.columns[index]]?.label ? ' (' + h(blanks[merge.columns[index]].label) + ')' : '')) + '</li>').join('') + '</ul>' +
-      '<div class="tools"><button type="button" id="merge-go" class="primary"' + (merge.rows.length && merge.columns.some(column => column !== null) ? '' : ' disabled') + '>Make one PDF of ' + merge.rows.length + ' filled cop' + (merge.rows.length === 1 ? 'y' : 'ies') + '</button></div>' : '') + '</details>';
+    (merge ? mergeList() : '') + '</details>';
+}
+// Each column keeps to the blank it was matched to when the CSV was opened, by the blank's id: a blank added or removed
+// by hand afterwards moves the numbers, not the columns.
+const mergeColumns = () => columnsNow(blanks, merge.ids);
+function mergeList() {
+  const columns = mergeColumns();
+  return '<p>' + h(merge.name) + ': ' + merge.rows.length + ' row' + (merge.rows.length === 1 ? '' : 's') + '.</p><ul class="columns">' + merge.headers.map((header, index) => '<li><b>' + h(header || '(no heading)') + '</b> → ' +
+    (columns[index] === null ? '<span class="miss">' + (merge.ids[index] !== null ? 'its blank was removed' : merge.shared.includes(header) ? 'two blanks have this label: use the blank’s number instead' : 'matches no blank') + '</span>' : 'blank ' + (columns[index] + 1) + (blanks[columns[index]]?.label ? ' (' + h(blanks[columns[index]].label) + ')' : '')) + '</li>').join('') + '</ul>' +
+    '<div class="tools"><button type="button" id="merge-go" class="primary"' + (merge.rows.length && columns.some(column => column !== null) ? '' : ' disabled') + '>Make one PDF of ' + merge.rows.length + ' filled cop' + (merge.rows.length === 1 ? 'y' : 'ies') + '</button></div>';
 }
 function handPanel() {
   if (!hand) return '';
@@ -433,7 +440,7 @@ async function makeMerge() {
     for (const [index, row] of merge.rows.entries()) {
       busy = 'Filling copy ' + (index + 1) + ' of ' + merge.rows.length + '…'; render();
       const before = found.length;
-      copies.push(await buildPdf({ pages, blanks, values: rowValues(blanks, merge.columns, row, finals), sourcePdf: form.pdf ? form.bytes : null, editable: false, problems: found }));
+      copies.push(await buildPdf({ pages, blanks, values: rowValues(blanks, mergeColumns(), row, finals), sourcePdf: form.pdf ? form.bytes : null, editable: false, problems: found }));
       for (let at = before; at < found.length; at++) found[at] = 'Row ' + (index + 1) + ': ' + found[at];
     }
     const bytes = await joinPdfs(copies);
@@ -506,7 +513,7 @@ app.addEventListener('change', event => {
   if (target.id === 'hand-model') store.set('handModel', target.value);
   if (target.id === 'use-details') { useDetails = target.checked; store.set('useDetails', useDetails); render(); }
   if (target.id === 'csv-file' && target.files[0]) void target.files[0].text().then(text => {
-    try { const rows = parseCsv(text); if (!rows.length) throw new Error('The CSV is empty.'); const headers = rows[0]; merge = { name: target.files[0].name, headers, rows: rows.slice(1), ...matchColumns(blanks, headers) }; note = ''; }
+    try { const rows = parseCsv(text); if (!rows.length) throw new Error('The CSV is empty.'); const headers = rows[0], matched = matchColumns(blanks, headers); merge = { name: target.files[0].name, headers, rows: rows.slice(1), ...matched, ids: columnIds(blanks, matched.columns) }; note = ''; }
     catch (error) { merge = null; note = error.message || String(error); }
     render();
   });

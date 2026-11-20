@@ -51,6 +51,12 @@ export function matchColumns(blanks, headers) {
   return { columns, unmatched, shared };
 }
 
+// The blanks a CSV's columns were matched to, by each blank's `id`, and the blank numbers those are now. A column keeps
+// to the blank it was matched to when blanks are added or removed by hand afterwards: matched by number, the number
+// meant the blank as it was numbered then. A column whose blank was removed matches none (null).
+export const columnIds = (blanks, columns) => columns.map(index => index === null || index === undefined ? null : blanks[index]?.id ?? null);
+export const columnsNow = (blanks, ids) => ids.map(id => { if (id === null || id === undefined) return null; const index = blanks.findIndex(blank => blank.id === id); return index < 0 ? null : index; });
+
 // One row's values, one per blank, on top of `base` (what every copy shares, such as today's date).
 export function rowValues(blanks, columns, row, base = []) {
   const values = blanks.map((blank, index) => base[index] ?? (blank.kind === 'check' ? false : ''));

@@ -8,7 +8,7 @@ visit.
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
 **Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; this README
-describes 2.4.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+describes 2.4.1, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 Everything below describes what works today, except the section headed [Roadmap](#roadmap-planned-not-built), which
 is planned and not built.
@@ -107,7 +107,7 @@ fingerprints.
 
 ## Tested in WebKit and Chromium
 
-`scripts/walk.cjs` drives the built page at phone size through 32 steps, using the invented forms in
+`scripts/walk.cjs` drives the built page at phone size through 33 steps, using the invented forms in
 `tests/fixtures`, and checks every PDF it makes with `pdftotext` and pdf-lib. Among them:
 
 - a crooked photo straightened and its 13 blanks found; the same form as a PDF, keeping its own page;
@@ -120,7 +120,8 @@ fingerprints.
   none;
 - a form remembered and a template saved by an older version each saying so;
 - a PDF's own fields found and filled, radio buttons included, and a choice it does not offer reported;
-- a 12-page PDF filled with all 12 pages kept, in order; many copies from a CSV;
+- a 12-page PDF filled with all 12 pages kept, in order; many copies from a CSV, its columns keeping to their blanks
+  when blanks are added or removed by hand;
 - templates saved and opened on a "new device"; answers handed over in a link;
 - offline: the page opens again and finds blanks with the server gone;
 - a PDF opened in a browser that lacks the newest JavaScript; a planted value in storage that does not run;
@@ -132,8 +133,8 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
-With `--handwriting` the walk also reads two synthetic handwritten pages (34 steps; it downloads the 64 MB model). The
-library and the command line have 200 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
+With `--handwriting` the walk also reads two synthetic handwritten pages (35 steps; it downloads the 64 MB model). The
+library and the command line have 201 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
 30 of the checkbox labels (9 of those are layouts where a box still gets words that are not its caption), and 3 of
 the blank finder in tables.
 
@@ -243,10 +244,6 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
   than their own fields.
 - **Fonts**: answers are set in Helvetica; letters it cannot draw are swapped for plain ones.
 - **Many copies** are print-ready only (each copy's fields would clash with the next).
-- **After adding or removing a blank by hand, open the CSV again.** A CSV's columns are matched to blank numbers when
-  it is opened, and not again when the blanks change. The columns for the blanks after the one added or removed then
-  land one blank off: on the invented form, removing blank 1 sends a "Day" column to the Night box. The listing under the CSV shows it ("Day → blank 10
-  (Night)"). A known defect, logged in `docs/INVENTORY.md` (16).
 
 ## Run it
 

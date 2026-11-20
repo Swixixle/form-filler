@@ -129,6 +129,23 @@ test('mail merge: CSV read the standard way; columns match by number, field name
   assert.deepEqual(lib.matchColumns(other, ['Other', 'Yes']), { columns: [1, null], unmatched: ['Yes'], shared: ['Yes'] });
 });
 
+test('a CSV\'s columns keep to the blanks they were matched to when a blank is added or removed by hand (defect 16)', () => {
+  const blanks = [{ id: 1, kind: 'line', label: 'Name' }, { id: 2, kind: 'box', label: 'Item' }, { id: 3, kind: 'check', label: 'Day' }, { id: 4, kind: 'check', label: 'Night' }];
+  const { columns } = lib.matchColumns(blanks, ['Day', '#2', 'Color']), ids = lib.columnIds(blanks, columns), row = ['x', 'Projector', 'blue'];
+  assert.deepEqual([columns, ids], [[2, 1, null], [3, 2, null]], 'Day is blank 3, "#2" is Item, Color matches none');
+  // Blank 1 removed by hand: the numbers move, the columns keep to Day and to Item ("#2" meant the blank numbered 2 then).
+  const removed = blanks.filter(blank => blank.id !== 1);
+  assert.deepEqual(lib.columnsNow(removed, ids), [1, 0, null]);
+  assert.deepEqual(lib.rowValues(removed, lib.columnsNow(removed, ids), row), ['Projector', true, false], 'Day ticked, not Night');
+  assert.deepEqual(lib.rowValues(removed, columns, row), ['', false, true], 'the old numbers on the new blanks: the Night box, as before the fix');
+  // A blank added by hand before them, the same.
+  assert.deepEqual(lib.columnsNow([{ id: 9, kind: 'box', label: 'added by hand' }, ...blanks], ids), [3, 2, null]);
+  // The Day box itself removed: its column matches none, and nothing is ticked in its place.
+  const noDay = blanks.filter(blank => blank.id !== 3);
+  assert.deepEqual(lib.columnsNow(noDay, ids), [null, 1, null]);
+  assert.deepEqual(lib.rowValues(noDay, lib.columnsNow(noDay, ids), row), ['', 'Projector', false]);
+});
+
 test('several filled copies join into one PDF, page after page', async () => {
   const one = await lib.buildPdf({ pages: [{ width: 1700, height: 2200, pdfPage: 0 }], blanks: [], values: [], sourcePdf: fixture('form.pdf'), editable: false });
   const joined = await PDFDocument.load(await lib.joinPdfs([one, one, one]));

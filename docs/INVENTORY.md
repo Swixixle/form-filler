@@ -3,7 +3,7 @@
 Phase 1 of the build plan ([BUILD_PLAN.md](BUILD_PLAN.md)). Written 2026-11-17 against `main` at `2747d0b` (version 2.1.0).
 No feature code was changed to produce this.
 
-**Since it was written:** defect 16 (a CSV's columns going stale) is logged, not fixed. In 2.4.0, defect 5 is fixed
+**Since it was written:** in 2.4.1, defect 16 (a CSV's columns going stale), logged after 2.4.0, is fixed. In 2.4.0, defect 5 is fixed
 where a table's header can be read the same twice; elsewhere its cells stay unlabelled. In 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
 measuring that fix, are logged. In 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
 on the same day (branches `phase-1-inventory` and `phase-2`): defects 1, 2 and 3 and
@@ -286,8 +286,16 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
 
     Each column matched to a blank after the one removed (or after the one added) then points one blank off. So in
     every copy those answers land in the wrong blank, here a wrong tick. *Find the blanks again*, opening another form
-    and opening a template all drop the CSV, so they are safe. **[V]** from the code. The fix would match the columns
-    again after any change to the blanks. **[I]**
+    and opening a template all drop the CSV, so they are safe. **[V]** from the code.
+
+    **Fixed in 2.4.1.** Each column now keeps to the blank it was matched to when the CSV was opened, by the blank's id,
+    not its number. A blank added or removed by hand moves the numbers, not the columns. A column whose own blank is
+    removed says "its blank was removed" and fills nothing. Matching the columns again by name was not done: a CSV made
+    against the form as it was means its "4" to stay with that blank, not with whichever blank is 4 after a change.
+    **[V]**
+    - The new walk step (remove blank 1, add a blank before the Day box, make the copy, remove the Day box) passes on
+      2.4.1, and fails on 2.4.0's build at "blank 1 removed".
+    - A unit test pins the same cases, and pins that the old numbers would have ticked the Night box.
 
 Smaller notes: the repository has no git tags, so 2.0.0 and 2.1.0 exist only in `CHANGELOG.md` and `package.json`.
 ## The patches
