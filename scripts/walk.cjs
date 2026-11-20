@@ -464,6 +464,41 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes('pasted form.png'), null, { timeout: 120000 });
     assert.match(await summary(), /13 blanks/);
   });
+  await step('a CSV opened before blanks are removed or added by hand: each column keeps to the blank it named, and the copy ticks that box', async () => {
+    // Defect 16 (docs/INVENTORY.md): the columns were matched to blank numbers once, so removing blank 1 sent the Day
+    // box's column to the Night box. The form pasted above (the invented form.png): blank 10 is the Day box, 11 the Night
+    // box. The column is "10", by number, since the Day box's caption reads differently by device (WebKit does not read
+    // "Day" on this pasted picture); a column by name keeps to its blank the same way (tests/lib.test.js).
+    await page.uncheck('#use-details').catch(() => {});
+    const boxes = page.locator('[data-blank]'), dayId = await boxes.nth(9).getAttribute('data-blank'), nightId = await boxes.nth(10).getAttribute('data-blank');
+    await page.locator('#merge-panel summary').click();
+    const csv = path.join(scratch, 'day.csv'); fs.writeFileSync(csv, '10\r\nx\r\n');
+    await page.setInputFiles('#csv-file', csv); await page.waitForSelector('#merge-go');
+    const listing = () => page.locator('.columns').innerText(), at = async id => page.locator('[data-blank="' + id + '"]').first();
+    assert.match(await listing(), /10 → blank 10\b/);
+    await page.click('#add-mode'); await page.locator('.remove').first().click();
+    assert.match(await listing(), /10 → blank 9\b/, 'blank 1 removed: the Day box is blank 9 now, and the column with it');
+    // A blank added by hand between the table and the Shift row, before the Day box: it is blank 10 again.
+    await page.locator('.sheet').first().scrollIntoViewIfNeeded();
+    const sheet = await page.locator('.sheet').first().boundingBox();
+    await page.mouse.move(sheet.x + sheet.width * 0.6, sheet.y + sheet.height * 0.336); await page.mouse.down();
+    await page.mouse.move(sheet.x + sheet.width * 0.9, sheet.y + sheet.height * 0.35, { steps: 4 }); await page.mouse.up();
+    await page.click('#add-mode');
+    assert.equal(await page.locator('[data-blank]').count(), 13);
+    assert.match(await listing(), /10 → blank 10\b/, 'a blank added before it');
+    // The copy: its one X is in the Day box, not the Night box (positions as fractions of the sheet, the page 612 pt across).
+    const day = await (await at(dayId)).boundingBox(), night = await (await at(nightId)).boundingBox(), across = box => (box.x + box.width / 2 - sheet.x) / sheet.width * 612;
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#merge-go')]);
+    const merged = path.join(scratch, 'day-merged.pdf'); await download.saveAs(merged);
+    const words = spawnSync('pdftotext', ['-bbox', merged, '-']).stdout.toString(), x = words.match(/<word xMin="([\d.]+)"[^>]*xMax="([\d.]+)"[^>]*>X<\/word>/);
+    assert.ok(x, 'an X in the copy: ' + words.slice(0, 300));
+    const centre = (Number(x[1]) + Number(x[2])) / 2;
+    assert.ok(Math.abs(centre - across(day)) < 6 && Math.abs(centre - across(night)) > 30, 'the X at ' + centre.toFixed(1) + ' pt; Day box at ' + across(day).toFixed(1) + ', Night box at ' + across(night).toFixed(1));
+    // The Day box itself removed: its column says so, and there is nothing left to fill.
+    await page.click('#add-mode'); await page.click('[data-remove="' + dayId + '"]'); await page.click('#add-mode');
+    assert.match(await listing(), /10 → its blank was removed/);
+    assert.ok(await page.locator('#merge-go').isDisabled(), 'no copies to make with no column matched');
+  });
   await step('nothing was sent anywhere' + (handwriting ? ' (only the handwriting model fetched from Hugging Face; no code CDN)' : ''), async () => {
     assert.deepEqual(outside.filter(url => !(handwriting && HF.test(url))), []);
   });

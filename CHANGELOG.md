@@ -1,5 +1,15 @@
 # Changes
 
+## 2.4.1 (2026-11-19)
+
+- **Many copies from a CSV, after blanks are changed by hand.** The page matched a CSV's columns to blank numbers once,
+  when the CSV was opened. Adding or removing a blank by hand afterwards moved the numbers, so the columns for the
+  blanks after it landed one blank off: on the invented form, removing blank 1 sent a "Day" column to the Night box
+  (defect 16, in 2.2.0 too). Now each column keeps to the blank it was matched to, and a column whose own blank is
+  removed says so and fills nothing. A walk step makes the copies after removing and adding blanks, and checks that
+  the tick is in the Day box.
+- In the library: `columnIds` and `columnsNow` keep a CSV's matched columns to their blanks, by each blank's `id`.
+
 ## 2.4.0 (2026-11-19)
 
 - **Table cells named by their headers.** A cell under a table's header row was listed as "blank". Now, in a table with

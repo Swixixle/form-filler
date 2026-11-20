@@ -10,6 +10,6 @@ export { readFields, readableName, pickOption, withFound } from './fields.js';
 export { plain, fitSize, wrap, isSignature, buildPdf, joinPdfs } from './output.js';
 export { KINDS, makeTemplate, readTemplate } from './templates.js';
 export { DETAILS, detailFor, detailValue, isDate, isSignatureLabel, formatDate, autofill } from './profile.js';
-export { parseCsv, matchColumns, rowValues } from './merge.js';
+export { parseCsv, matchColumns, columnIds, columnsNow, rowValues } from './merge.js';
 export { segmentLines } from './handwriting.js';
 export { HANDWRITING_MODELS } from './models.js';
