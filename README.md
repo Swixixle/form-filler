@@ -243,6 +243,10 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
   than their own fields.
 - **Fonts**: answers are set in Helvetica; letters it cannot draw are swapped for plain ones.
 - **Many copies** are print-ready only (each copy's fields would clash with the next).
+- **After adding or removing a blank by hand, open the CSV again.** A CSV's columns are matched to blank numbers when
+  it is opened, and not again when the blanks change. The columns for the blanks after the one added or removed then
+  land one blank off: on the invented form, removing blank 1 sends a "Day" column to the Night box. The listing under the CSV shows it ("Day → blank 10
+  (Night)"). A known defect, logged in `docs/INVENTORY.md` (16).
 
 ## Run it
 

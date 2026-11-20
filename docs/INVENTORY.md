@@ -3,8 +3,8 @@
 Phase 1 of the build plan ([BUILD_PLAN.md](BUILD_PLAN.md)). Written 2026-11-17 against `main` at `2747d0b` (version 2.1.0).
 No feature code was changed to produce this.
 
-**Since it was written:** in 2.4.0, defect 5 is fixed where a table's header can be read the same twice; elsewhere
-its cells stay unlabelled. In 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
+**Since it was written:** defect 16 (a CSV's columns going stale) is logged, not fixed. In 2.4.0, defect 5 is fixed
+where a table's header can be read the same twice; elsewhere its cells stay unlabelled. In 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
 measuring that fix, are logged. In 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
 on the same day (branches `phase-1-inventory` and `phase-2`): defects 1, 2 and 3 and
 the unescaped signature in defect 8 are fixed, each with a test that failed before; defect 9's first half is fixed
@@ -274,6 +274,20 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
     - In a tight cell, the space right of a checkbox ("Agreed [ ]") is offered as a blank.
     - A roomy box with a unit at its right ("Weight ___ kg") gets no blank: the unit's ink runs to the wall.
     - 6 pt checkboxes on an A4 checklist are not found.
+16. **A CSV's columns go stale when a blank is added or removed by hand** (found 2026-11-19 by the review of 2.3.0; in
+    2.2.0 too, and still in 2.4.0). The page matches a CSV's columns to blank numbers once, when the CSV is opened
+    (`src/app/main.js:509`). Adding a blank by hand (`:604`) or removing one (`:526`) changes the numbers, but the
+    columns are not matched again, so the listing and the copies use the old numbers. **[V]** run on 2.4.0's build in
+    Chromium, with the invented `form.png` and a CSV with one column, "Day", and "x" under it:
+    - Before: the listing reads "Day → blank 10 (Day)".
+    - After removing blank 1 (Name) by hand: it reads "Day → blank 10 (Night)".
+    - In the copy, the X is at 168.8 to 173.2 pt across, inside the Night box (167.4 to 174.6 pt), not the Day box
+      (95.4 to 102.6 pt).
+
+    Each column matched to a blank after the one removed (or after the one added) then points one blank off. So in
+    every copy those answers land in the wrong blank, here a wrong tick. *Find the blanks again*, opening another form
+    and opening a template all drop the CSV, so they are safe. **[V]** from the code. The fix would match the columns
+    again after any change to the blanks. **[I]**
 
 Smaller notes: the repository has no git tags, so 2.0.0 and 2.1.0 exist only in `CHANGELOG.md` and `package.json`.
 ## The patches
