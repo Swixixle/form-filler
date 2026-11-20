@@ -1,9 +1,9 @@
 # Pictures, PDFs and other files that are not text, each listed by someone who says it is invented: no real
 # person, form or document. The never-list gate refuses any such file that is not here. Add one with:
 #   npm run never-list -- vouch FILE
-9e5968317eeaa9c14338625d48da14bdafb0da646a8e8aea4dd1617afeb72d08  docs/images/answers.png
-308d195cb5d855f79611a4a6bc20ce1424d8fc352f83baf6a6d2c3ed655564ee  docs/images/blanks.png
-495fa42f2d10c0b362939d46ac279a2778101f6aaf3e89fb2ca1888d4598af5c  docs/images/filled.png
+71e0547100eab8ae163dc5149c77396f8bab29d1a25e44eaf8b316c86e17b6b8  docs/images/answers.png
+a92a54ba30e637f98578cf3a387d8c1e1f54b03cafa43930d707261e4d0efdbe  docs/images/blanks.png
+1b3ca7750d48ffbd8296c99309e15b9c52ae505cd443e76bf4c8f1dbb52eadbc  docs/images/filled.png
 74946869f6a65bc21ebcdb7f85f96d3160e6d34f48646ca2ebde9399fd75506d  docs/images/webkit-qty.png
 72697bc4b8fedb1b4c141cd40e50339d2d61d5f17fd6885f9f9fe1e0da38c4fe  public/icons/apple-touch-icon.png
 257b012db805e187d4f2d4373f64367a9527637b6884773fe46189ce25880d04  public/icons/icon-192.png
