@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,11 @@ import { openArchive, readRecord, cleanName, matterPath, itemsWithFile, sha256, 
 import { nodeFiles } from '../src/lib/files/node.js';
 import { memoryFiles } from './memory-files.js';
 
-// The archive, on invented documents only: made-up bytes, invented counterparties and titles.
+// The archive, on invented documents only: made-up bytes, invented counterparties and titles. Every folder the tests
+// make is under one temporary folder, removed when they are done.
+const scratch = mkdtempSync(join(tmpdir(), 'ff-archive-'));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+const tempFolder = () => mkdtempSync(join(scratch, 'disk-'));
 const clock = () => new Date(2026, 10, 17, 15, 30, 0);
 const bytes = value => new TextEncoder().encode(value);
 const hashOf = data => createHash('sha256').update(data).digest('hex');
@@ -28,7 +32,7 @@ const walk = (dir, { folders = false } = {}, at = '') => {
 // Each test that depends on the disk runs on all three: the real one (Linux in CI, a Mac's here), the real one acting
 // as a disk that cannot give a file a second name (some USB drives), and a Mac-like one in memory, where names that
 // differ only in case or in how an accent is encoded are one name.
-const real = links => () => { const dir = mkdtempSync(join(tmpdir(), 'ff-archive-')); return { dir, files: nodeFiles(dir, { links }), dump: options => walk(dir, options) }; };
+const real = links => () => { const dir = tempFolder(); return { dir, files: nodeFiles(dir, { links }), dump: options => walk(dir, options) }; };
 const DISKS = {
   'the real disk': real(true),
   'the real disk, without second names': real(false),
@@ -506,7 +510,7 @@ const bin = fileURLToPath(new URL('../bin/form-filler.mjs', import.meta.url)), f
 const run = (...args) => spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
 
 test('the command line files, adds, verifies, moves and indexes, and verify says what changed', () => {
-  const dir = join(mkdtempSync(join(tmpdir(), 'ff-archive-cli-')), 'Test Archive');
+  const dir = join(tempFolder(), 'Test Archive');
   const added = run('archive', 'add', dir, '--matter=Taxes/2026', '--direction', 'out', '--counterparty', 'IRS', '--title', 'Form 1040', '--role', 'original', fixture('form.pdf'));
   assert.equal(added.status, 0, added.stderr);
   const item = added.stdout.trim();
@@ -542,7 +546,7 @@ test('the command line files, adds, verifies, moves and indexes, and verify says
 });
 
 test('the command line reads the archive\'s flags strictly, so a file is never taken for a flag\'s value', () => {
-  const dir = join(mkdtempSync(join(tmpdir(), 'ff-archive-cli-')), 'Test Archive'), form = fixture('form.pdf'), fillable = fixture('fillable.pdf');
+  const dir = join(tempFolder(), 'Test Archive'), form = fixture('form.pdf'), fillable = fixture('fillable.pdf');
   const base = ['archive', 'add', dir, '--direction', 'in', '--counterparty', 'City Hall', '--title', 'Notice'];
   for (const [args, why] of [
     [[...base, '--recieved', '2026-03-02', form], /--recieved is not an option of "archive add"; it takes --direction, --counterparty, --title, --matter, --channel, --sent, --received, --role\./],
