@@ -1,6 +1,6 @@
 {
   "name": "form-filler",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "private": true,
   "license": "MIT",
   "description": "Fill hard forms easily: blanks found from the page or the PDF's own fields, loose answers placed in order, your details and today's date filled, templates, mail merge, handwriting read on the device.",
@@ -9,7 +9,8 @@
     "node": ">=22"
   },
   "exports": {
-    ".": "./src/lib/index.js"
+    ".": "./src/lib/index.js",
+    "./files/node": "./src/lib/files/node.js"
   },
   "bin": {
     "form-filler": "bin/form-filler.mjs"

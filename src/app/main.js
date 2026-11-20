@@ -9,12 +9,11 @@ import { DETAILS, autofill, isSignatureLabel } from '../lib/profile.js';
 import { parseCsv, matchColumns, columnIds, columnsNow, rowValues } from '../lib/merge.js';
 import { segmentLines } from '../lib/handwriting.js';
 import { HANDWRITING_MODELS } from '../lib/models.js';
+import { sha256 } from '../lib/hash.js';
 
 const app = document.getElementById('app');
 const asset = path => new URL(import.meta.env.BASE_URL + path, window.location.href).href;
 const h = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const hex = buffer => [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-const sha256 = async data => hex(await crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : data));
 const MAX_PAGES = 10, WIDTH = 1700;
 
 // What this browser keeps on this device: your details, a signature if you ask, and each form's blanks (by the form's

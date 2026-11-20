@@ -197,6 +197,38 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
 **A template** is plain JSON, checked field by field when read (`src/lib/templates.js` documents it):
 `{ formFiller: "template", version: 1, form: { sha256, name, type }, pages: [...], blanks: [...] }`.
 
+**The archive** (`src/lib/archive.js` documents it): a plain folder of everything that came in or went out, filed by
+matter. Each item is a dated folder (`Taxes/2026/2026-11-17 sent IRS - Form 1040/`) with its files behind role words
+and a `record.json` holding each file's SHA-256. Nothing in it is ever deleted or overwritten: a name that is taken
+gets " (2)", and a record that changes is written anew with the old one kept in the item's hidden `.formfiller`
+folder. The only files it rewrites or removes are its own bookkeeping there: the index cache, and a lock that lets
+one program at a time change the archive. The page does not use it yet; the Mac app will.
+
+```js
+import { openArchive } from 'form-filler';
+import { nodeFiles } from 'form-filler/files/node';
+
+const archive = openArchive(nodeFiles('Test Archive'));
+const { path } = await archive.createItem({ matter: 'Taxes/2026', direction: 'out', counterparty: 'IRS',
+  title: 'Form 1040', files: [{ role: 'filled', name: 'f1040.pdf', bytes }] });
+const report = await archive.verify();   // { ok, missing, changed, unrecorded, unfinished, problems, notes }
+```
+
+```sh
+# File documents as a new item (the archive's folder is made if needed); prints the item's folder
+form-filler archive add "Test Archive" --matter Taxes/2026 --direction out \
+  --counterparty IRS --title "Form 1040" --role filled filled.pdf
+
+# Read every file again and say what is missing, changed or not recorded; changes nothing
+form-filler archive verify "Test Archive"
+```
+
+Also `archive file` (more files for an item, beside what is there), `archive move` (to another matter, written in
+its record) and `archive index` (the index cache made again from every record). `verify` also says which items the
+index knew that have left the archive, and exits 1 if anything is missing, changed, gone, unfinished or unreadable;
+with `--strict`, also if anything is not recorded. The archive's flags are read strictly, so a misspelt one is
+refused instead of swallowing the file after it.
+
 ## What it cannot do (yet)
 
 - **Labels.** A table's cells are named by their column's header only where its two reads agree. The header row
@@ -270,7 +302,7 @@ The test forms and pages in `tests/fixtures` are invented (`scripts/make-fixture
 
 ## Roadmap (planned, not built)
 
-None of this exists yet. The plan is in [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md); what the code was before it started is
+None of this exists yet, except the archive's library and command line (2.5.0, above). The plan is in [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md); what the code was before it started is
 in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built is in
 [docs/PHASE2_PROPOSAL.md](docs/PHASE2_PROPOSAL.md).
 
@@ -291,8 +323,8 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
 browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, tables with tight rows in 2.3.1, and table cells named
 by their headers in 2.4.0. A throwaway spike of the
-Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)); the app itself, the vault, archive and backups are not
-started.
+Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)), and the archive is built as a library and a command
+(2.5.0); the app itself, the vault and backups are not started.
 
 ## Licence
 

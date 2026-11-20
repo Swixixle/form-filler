@@ -385,6 +385,16 @@ create a file that does not exist yet, create a folder, rename to a name not yet
 " (2)". A newer version of a document is added beside the old one. The only thing ever rewritten is the index cache.
 A test asserts that after every operation, every file that existed before still exists with the same SHA-256.
 
+As built (2.5.0): a record that changes, when a file is added or the item moved, is written anew, and the old
+`record.json` is kept in the item's hidden `.formfiller/` folder as `record 1.json`, `record 2.json`…, so no record
+is overwritten either. The test therefore holds by content: after every operation every earlier file's bytes are
+still there, and every document is still at its path unless the operation moved its item. A new item is put
+together in `.formfiller/new/` and moved into its matter in one rename, so a half-made item never sits among the
+others; anything left unfinished by a stop is reported by `verify`. Two more things the rules needed, found in
+review: one program at a time changes an archive (a lock, `.formfiller/lock`, which with the index cache is the only
+file the archive ever rewrites or removes), and `verify` compares with the index, so an item taken out of the archive
+whole in Finder is reported as gone rather than simply no longer seen.
+
 **Never misfile.** Filing takes a matter and a confidence. In phase 2 there is no guessing at all: an item goes where
 you put it, and if you put it nowhere it goes to `_Unsorted`. The suggestion logic of later phases plugs into the
 same call, with a threshold below which `_Unsorted` is the only answer.
@@ -544,7 +554,7 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | – | **Never-list gate** (privacy wall, part 2) | Small | **Done.** A commit carrying a never-list value is refused, on the Mac and on GitHub |
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
 | 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
-| 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand |
+| 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand. **Built** (2026-11-20, 2.5.0): `src/lib/archive.js`, the file interface over Node, and `form-filler archive add`, `file`, `move`, `index`, `verify`; the hand check is yours |
 | 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text |
 | 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |
 | 5 | The shell: setup, unlock, locker, archive list, export into the archive, backup and restore screens, with never-list fields masked (privacy wall, part 5) | Large | You can do all of it by clicking |

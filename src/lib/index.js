@@ -13,3 +13,6 @@ export { DETAILS, detailFor, detailValue, isDate, isSignatureLabel, formatDate, 
 export { parseCsv, matchColumns, columnIds, columnsNow, rowValues } from './merge.js';
 export { segmentLines } from './handwriting.js';
 export { HANDWRITING_MODELS } from './models.js';
+export { sha256 } from './hash.js';
+// The archive works through a file interface it is handed: for Node, `nodeFiles` from 'form-filler/files/node'.
+export { INBOX, UNSORTED, FILING_THRESHOLD, cleanName, matterPath, localTime, readRecord, checkItem, itemsWithFile, openArchive } from './archive.js';

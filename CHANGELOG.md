@@ -1,5 +1,24 @@
 # Changes
 
+## 2.5.0 (2026-11-20)
+
+- **The archive, as a library and on the command line** (phase 2, slice 2). A plain folder of everything that came
+  in or went out, filed by matter: each item is a dated folder ("2026-11-17 sent IRS - Form 1040") holding its files
+  behind role words and a `record.json` with each file's SHA-256. Nothing in it is ever deleted or overwritten: the
+  archive works through a file interface that has no delete and no overwrite, a name that is taken gets " (2)", and a
+  record that changes is written anew with the old one kept. An item nobody filed goes to `_Unsorted`. The index
+  (`.formfiller/index.json`) is a cache, kept up to date and made again from the records at any time, so the folders
+  can be rearranged in Finder; `verify` reads every file again and says what is missing, changed or not recorded,
+  which items the index knew have left the archive, and what a stop left unfinished, and changes nothing. One program
+  at a time changes an archive (a lock in `.formfiller`; one left by a program that stopped is taken over).
+- On the command line: `form-filler archive add`, `file`, `move`, `index` and `verify`. Their flags are read
+  strictly: one the command does not know, one given twice or one with no value is refused, so a file is never taken
+  for a flag's value and left out.
+- In the library: `openArchive`, `readRecord`, `cleanName`, `matterPath`, `itemsWithFile`, and `nodeFiles` (from
+  `form-filler/files/node`), the file interface over Node.
+- One SHA-256 helper (`src/lib/hash.js`) for the page, the library and the command line, which each had their own.
+- The page does not use the archive yet; the Mac app will.
+
 ## 2.4.1 (2026-11-19)
 
 - **Many copies from a CSV, after blanks are changed by hand.** The page matched a CSV's columns to blank numbers once,
