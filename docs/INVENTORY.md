@@ -3,7 +3,8 @@
 Phase 1 of the build plan ([BUILD_PLAN.md](BUILD_PLAN.md)). Written 2026-11-17 against `main` at `2747d0b` (version 2.1.0).
 No feature code was changed to produce this.
 
-**Since it was written:** in 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
+**Since it was written:** in 2.4.0, defect 5 is fixed where a table's header can be read the same twice; elsewhere
+its cells stay unlabelled. In 2.3.1, defect 11 is fixed but for a few cases it lists, and defects 12 to 15, found while
 measuring that fix, are logged. In 2.3.0, defect 4 is fixed for checkboxes (table cells are still unlabelled). Before that,
 on the same day (branches `phase-1-inventory` and `phase-2`): defects 1, 2 and 3 and
 the unescaped signature in defect 8 are fixed, each with a test that failed before; defect 9's first half is fixed
@@ -174,7 +175,27 @@ Numbered so later phases can refer to them. All were reproduced unless marked.
 4. **Checkboxes get the wrong label.** A checkbox's label is taken from the words to its left, but a checkbox's
    caption is usually on its right. On the invented form the Day box is labelled "Shift" and the Night box "[] Day"
    (both engines). A CSV column named "Day" then ticks the **Night** box. **[V]**
-5. **Table cells have no labels.** Every cell under a header row is labelled "blank". **[V]**
+5. **Table cells have no labels.** Every cell under a header row is labelled "blank". **[V]** **Fixed in 2.4.0**
+   where the header can be checked. The page's own read does not return the words of a ruled header row, so each
+   header cell is now read on its own, twice: as it is, and from a copy enlarged twofold. The column's cells take
+   the header only when the two reads agree letter for letter, but for the misreads "[", "|" or "l" for "I" and "0"
+   for "O", and the first read is at least 60% sure. Otherwise they stay unlabelled. These cells are never filled with
+   the user's details.
+
+   It was measured on a frozen invented set built to trip it, by a separate agent that did not see the code: 18 pages,
+   75 header cells over 232 body cells. The headers included ordinary ones, "#", "No.", "ID", two-line headers,
+   handwriting, two smudges, two logos, two scribbles, two empty headers, and photographed copies. **[V]**
+   - No cell was named wrong.
+   - 160 of the 193 cells found under a real header were named right, and 33 were left blank.
+   - All 32 cells under a header with no words stayed blank.
+   - 7 cells were not found at all, on photos straightened 0.1° short.
+
+   The first run had one wrong name: "price" in the top cell of a "Unit price" column, which the page's read had
+   already given that cell before this change. The rule now also replaces such a label in a column's top cell, or
+   drops it, and this was changed after seeing that run. On the same set, the misread repair names "Item" twice
+   where the reads were "Item" and "[tem", and lets no smudge, logo or scribble through. The 60% threshold now rests on
+   69 header cells, read twice each, with 3 first reads between 50% and 70%: one more right name at 50%, one fewer at
+   70%, no wrong name at either.
 6. **Dark mode hides the form.** With the system in dark mode, every blank on the form is a solid black bar, and the
    "Opening the form…" banner is pale text on a pale box. Seen on the live page. **[V]**
 7. **Blank numbers cover the start of each label.** Known; the README says so. **[V]**

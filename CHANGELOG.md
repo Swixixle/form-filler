@@ -1,5 +1,28 @@
 # Changes
 
+## 2.4.0 (2026-11-19)
+
+- **Table cells named by their headers.** A cell under a table's header row was listed as "blank". Now it is listed by
+  its column's header ("Item", "Serial number", "Qty"), so the list shows what goes where. The page's read of a whole
+  form does not return a ruled header row's words. Each header cell is read on its own instead, twice: as it is, and
+  from a copy enlarged twofold. The cells are named only when both reads say the same, letter for letter, but for
+  misread letters ("[tem" for "Item", "N0." for "No."), and the first read is at least 60% sure. Otherwise they stay
+  "blank": a wrong name is worse than none.
+- **Measured on an invented set made to trip it:** 75 headers, including smudges, logos, scribbles, handwriting,
+  two-line and one-character headers, and photographed copies. No cell was named wrong. Of the 193 cells found under a
+  real header, 160 were named and 33 left blank, mostly under handwritten, very short or photographed headers. The 32
+  cells under a smudge, logo, scribble or empty header all stayed blank.
+- A table's first row could already take words from its header when the page's read reached them, sometimes only part
+  of a header ("price" for "Unit price"). Such a label now becomes the whole header once it reads the same twice, and
+  is dropped when it does not.
+- **A table's cells are never filled with your details** or today's date, whatever their header says: a "Name" or
+  "Date" column belongs to many rows.
+- No new download: the header reads use the same reader as the rest of the page. On the invented form (three
+  headers) they add about a tenth of a second to finding the blanks: 85 to 140 ms, measured in Chromium and WebKit on
+  a Mac.
+- In the library: `headerLabels` names a page's table cells from two reads of each header cell, given a function that
+  reads a small picture; `headerCells` and `headerLabel` are its parts. A template keeps the mark (`column: true`).
+
 ## 2.3.1 (2026-11-19)
 
 - **Tables with tight rows.** In rows under about 25 pt, the upright strokes of a header's letters passed for cell

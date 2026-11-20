@@ -1,0 +1,8 @@
+{"page": "tight-table.png", "reads": [
+{"width":446,"height":70,"words":[{"text":"Visitor","confidence":96}]},
+{"width":876,"height":124,"words":[{"text":"Visitor","confidence":96}]},
+{"width":447,"height":70,"words":[{"text":"Room","confidence":94}]},
+{"width":878,"height":124,"words":[{"text":"Room","confidence":95}]},
+{"width":413,"height":70,"words":[{"text":"Badge","confidence":95}]},
+{"width":810,"height":124,"words":[{"text":"Badge","confidence":96}]}
+]}

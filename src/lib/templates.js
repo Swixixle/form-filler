@@ -13,7 +13,7 @@
 // Positions are pixels of the page picture (`width` by `height`). A template for a photo can carry the straightened
 // page picture itself (`image`), so a program with no way to straighten a photo can still make the PDF.
 export const KINDS = ['line', 'box', 'check', 'choice', 'sign'];
-const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'field', 'multiline', 'maxLength', 'options', 'choice', 'unsure'];
+const KEEP = ['page', 'kind', 'x0', 'y0', 'x1', 'y1', 'label', 'column', 'field', 'multiline', 'maxLength', 'options', 'choice', 'unsure'];
 
 export function makeTemplate({ form, pages, blanks }) {
   return {
@@ -50,6 +50,8 @@ export function readTemplate(input) {
     if (out.x1 <= out.x0 || out.y1 <= out.y0) fail(what + ' has no size');
     if (out.x1 > pages[blank.page].width + 1 || out.y1 > pages[blank.page].height + 1) fail(what + ' runs off its page');
     out.label = typeof blank.label === 'string' ? blank.label : '';
+    // A label read from the column's header of a table (never filled with your details).
+    if (blank.column === true && out.label) out.column = true;
     if (blank.field !== undefined) out.field = String(blank.field);
     if (blank.multiline) out.multiline = true;
     if (out.kind === 'check' && !out.label && Array.isArray(blank.unsure)) { const words = blank.unsure.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()).slice(0, 3); if (words.length) out.unsure = words; }

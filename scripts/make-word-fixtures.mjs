@@ -16,7 +16,7 @@ import { skewOf, rotate } from '../src/lib/blanks.js';
 const require = createRequire(import.meta.url), here = name => fileURLToPath(new URL('../tests/fixtures/' + name, import.meta.url));
 const { createWorker } = require('tesseract.js');
 const langPath = fileURLToPath(new URL('../node_modules/@tesseract.js-data/eng/4.0.0_best_int', import.meta.url));
-const PAGES = ['form.png', 'form-photo.png', 'form-webkit.png', 'checkboxes.png'];
+const PAGES = ['form.png', 'form-photo.png', 'form-webkit.png', 'checkboxes.png', 'tight-table.png'];
 const box = bbox => ({ x0: bbox.x0, y0: bbox.y0, x1: bbox.x1, y1: bbox.y1 }), sure = confidence => Math.round(confidence * 100) / 100;
 
 const worker = await createWorker('eng', 1, { langPath, gzip: true, cacheMethod: 'none' });

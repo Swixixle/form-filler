@@ -8,7 +8,7 @@ visit.
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
 **Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; this README
-describes 2.3.1, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+describes 2.4.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 Everything below describes what works today, except the section headed [Roadmap](#roadmap-planned-not-built), which
 is planned and not built.
@@ -42,12 +42,15 @@ One after another, in the form's order, as plain lines:
 The list under the box shows each blank's label and what it will get, so a wrong placement shows before anything is
 made. A checkbox is listed by its own caption, whichever side of the box it is printed on ("[ ] Yes" or "Yes [ ]").
 When that cannot be told (a word as near one box as the next, or a note, code or price beside the caption), the list
-says "unclear" instead of guessing, and no CSV column goes to that box.
+says "unclear" instead of guessing, and no CSV column goes to that box. A table's cells are listed by their column's
+header ("Item", "Qty"). Each header cell is read on its own, twice, and a cell is named only when both reads say the
+same; otherwise it is listed as "blank".
 
 **Your details** (full, first and last name, e-mail, phone, street address, city, state, ZIP, date of birth) are saved
 once on the device and filled into any blank whose label asks for them. A label about someone else ("Patient name",
 "Emergency contact phone", "Supervisor") is left alone. "Date" gets today, but a date of birth, start, end or due date
-does not. Typed answers pass over the blanks your details filled, so you type only what is missing.
+does not. A table's cells are never filled this way, whatever their header says: a "Name" column is many people's.
+Typed answers pass over the blanks your details filled, so you type only what is missing.
 
 **Answers on paper.** Write each answer after its blank's number ("3 Jane Roe", "7. Facilities", "#9 yes"), in any
 order, photograph the page and tap *Read handwriting* (or *Read a printed page* for typed text). Each line read is
@@ -111,6 +114,8 @@ fingerprints.
   told shown as unclear;
 - the same form and sheet as PDFs: no box gets another box's words, and a CSV column "Day" goes to the Day box (or
   to none, where that box is unclear) and never to the Night box;
+- the table's cells labelled by their column's header: on the photo, every one; on the PDF, each by its own header or
+  none;
 - a form remembered and a template saved by an older version each saying so;
 - a PDF's own fields found and filled, radio buttons included, and a choice it does not offer reported;
 - a 12-page PDF filled with all 12 pages kept, in order; many copies from a CSV;
@@ -126,7 +131,7 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
 With `--handwriting` the walk also reads two synthetic handwritten pages (34 steps; it downloads the 64 MB model). The
-library and the command line have 183 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
+library and the command line have 193 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
 30 of the checkbox labels (9 of those are layouts where a box still gets words that are not its caption), and 3 of
 the blank finder in tables.
 
@@ -191,7 +196,11 @@ SHA-256) unless `--any-form` is given. A photographed form's template carries it
 
 ## What it cannot do (yet)
 
-- **Labels.** Cells under a table's header row are not labelled yet: the list calls them "blank". A checkbox is
+- **Labels.** A table's cells are named by their column's header only where the header can be checked. The header
+  row must be closed by a rule over it and the column's own walls, and its two reads must agree. A header across
+  several columns, an open table, and a header the reader cannot read the same twice (handwriting, a smudge, a
+  photo's blur) leave the cells "blank". On an invented set of 75 headers made to trip it, no cell was named wrong,
+  and 33 of the 193 cells found under a real header were left blank. A checkbox is
   left unclear whenever its caption is in doubt, and the rule leans to doubt: a caption with a note, number, code or
   price beside it ("Yes – go to Q8", "Adult $12", "500 ml"), answer codes, and a caption that wraps to the next line
   are left unclear even when a person could tell. A note, price or code the rule does not recognise can still end up
@@ -271,7 +280,8 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
   and leaves the submit click to you.
 
 Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gate and the fixes for WebKit, older
-browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, and tables with tight rows in 2.3.1; the Mac app, vault,
+browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, tables with tight rows in 2.3.1, and table cells named
+by their headers in 2.4.0; the Mac app, vault,
 archive and backups are not started.
 
 ## Licence

@@ -1,0 +1,8 @@
+{"page": "form-photo.png", "reads": [
+{"width":602,"height":76,"words":[{"text":"Item","confidence":92}]},
+{"width":1188,"height":136,"words":[{"text":"Item","confidence":63}]},
+{"width":502,"height":76,"words":[{"text":"Serial","confidence":96},{"text":"number","confidence":95}]},
+{"width":988,"height":136,"words":[{"text":"Serial","confidence":96},{"text":"number","confidence":95}]},
+{"width":362,"height":76,"words":[{"text":"Qty","confidence":96}]},
+{"width":708,"height":136,"words":[{"text":"Qty","confidence":97}]}
+]}
