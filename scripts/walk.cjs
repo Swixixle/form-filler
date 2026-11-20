@@ -342,6 +342,10 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     }
     const file = path.join(scratch, 'long.pdf'); fs.writeFileSync(file, await long.save());
     await page.setInputFiles('#form-file', file);
+    // One job at a time: another form chosen while this one is being opened is not opened, and the page says so.
+    await page.waitForSelector('.busy');
+    await page.setInputFiles('#form-file', path.join(fixtures, 'form.png'));
+    await page.waitForFunction(() => [...document.querySelectorAll('.note')].some(note => /“form\.png” was not opened: the page is still busy/.test(note.textContent)), null, { timeout: 10000 });
     await page.waitForFunction(() => !document.querySelector('.busy') && (document.querySelector('.panel .subtle')?.textContent || '').includes('long.pdf'), null, { timeout: 300000 });
     assert.match(await summary(), /10 pages · 10 blanks found/);
     assert.match(await page.locator('.note').first().innerText(), /Only the first 10 pages are shown; the other 2 are kept as they are\./);
@@ -448,6 +452,40 @@ const today = (() => { const date = new Date(); return String(date.getMonth() + 
     await page.setInputFiles('#template-file', oldTemplateFile);
     await page.waitForFunction(() => /template file itself/.test(document.querySelector('.note')?.textContent || ''), null, { timeout: 30000 });
     assert.match(await page.locator('.note').first().innerText(), /saved by an earlier version.*open the original form/);
+  });
+  // The page draws itself again when the vault has been read, just after it opens. On a slow device (GitHub's Mac, once)
+  // that came while a file was being chosen, and the file went to a picker no longer on the page: nothing opened. Here
+  // the read is made late on purpose: another tab holds the vault's files (a transaction kept going) until the page has
+  // opened and its picker has been found, so the step does not hang on how fast the machine is.
+  await step('a file chosen while the page draws itself again still opens: the picker is kept, not made again', async () => {
+    const { context: other, page: busy } = await open();
+    try {
+      const reading = target => target.evaluate(() => /Looking for your saved details/.test(document.body.textContent));
+      await busy.goto(origin);
+      await busy.waitForFunction(() => !/Looking for your saved details/.test(document.body.textContent));
+      await busy.evaluate(() => new Promise((done, failed) => {
+        const opening = indexedDB.open('form-filler-vault');
+        opening.onerror = () => failed(opening.error);
+        opening.onsuccess = () => {
+          const files = opening.result.transaction('files', 'readwrite').objectStore('files'), until = performance.now() + 60000;
+          window.holdingVault = true;
+          const spin = () => { if (window.holdingVault && performance.now() < until) files.get('vault.json').onsuccess = spin; };
+          spin(); done();
+        };
+      }));
+      const late = await other.newPage();
+      late.on('pageerror', error => problems.push(error.message));
+      await late.goto(origin);
+      assert.ok(await reading(late), 'the vault is still being read when the page has opened');
+      const picker = await late.$('#template-file');
+      await picker.focus();
+      await busy.evaluate(() => { window.holdingVault = false; });
+      await late.waitForFunction(() => !/Looking for your saved details/.test(document.body.textContent), null, { timeout: 15000 });
+      assert.ok(await picker.evaluate(input => input.isConnected), 'the picker found before the page drew itself again is still on the page');
+      assert.ok(await picker.evaluate(input => document.activeElement === input), 'and it still has the keyboard\'s focus');
+      await picker.setInputFiles(templateFile);
+      await late.waitForFunction(() => /remembered from last time/.test(document.querySelector('.panel .subtle')?.textContent || ''), null, { timeout: 30000 });
+    } finally { await other.close(); }
   });
   await step('a template the command line made from a PDF\'s own fields (in points) lands on the page drawn in pixels', async () => {
     const made = path.join(scratch, 'fields.json');

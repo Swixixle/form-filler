@@ -426,7 +426,25 @@ function handPanel() {
     '<div class="tools"><button type="button" id="hand-use" class="primary"' + (hand.lines.some(line => line.done) ? '' : ' disabled') + '>Put these lines in my answers</button><button type="button" id="hand-drop" class="secondary">Throw these away</button></div></div>';
 }
 
+// The file pickers are kept from one drawing of the page to the next, not made again. The page draws itself again at
+// times nobody chose (when the vault has been read, just after the page opens; when it locks; when another tab
+// changes it), and a file chosen just then would land on a picker no longer on the page, and nothing would open. A
+// picker that had the keyboard's focus keeps it. One not drawn this time (its form has gone) is let go, and taken out
+// of the page it was on: held, it would hold that whole page in memory, your details on it even after the vault locks.
+const pickers = new Map();
+function keepPickers(focused) {
+  const drawn = new Set();
+  for (const fresh of app.querySelectorAll('input[type=file]')) {
+    drawn.add(fresh.id);
+    const kept = pickers.get(fresh.id);
+    if (kept) fresh.replaceWith(kept); else pickers.set(fresh.id, fresh);
+  }
+  for (const [id, kept] of pickers) if (!drawn.has(id)) { kept.remove(); pickers.delete(id); }
+  if (focused && pickers.get(focused.id) === focused) focused.focus({ preventScroll: true });
+}
+
 function render() {
+  const focused = document.activeElement;
   const { finals, extra, fixed } = form ? current() : { finals: [], extra: [], fixed: new Map() };
   const model = store.get('handModel', 'small');
   app.classList.toggle('open', Boolean(form));
@@ -462,6 +480,7 @@ function render() {
       '<dl class="prints"><dt>Form</dt><dd>' + form.hash + '</dd><dt>Answers</dt><dd id="answers-print">…</dd>' + Object.entries(prints).map(([name, value]) => '<dt>' + h(name) + '</dt><dd>' + value + '</dd>').join('') + '</dl></section></div>' : '') +
     mergePanel() + detailsPanel() + '</main>' +
     '<footer class="version">Form Filler ' + __APP_VERSION__ + (__APP_COMMIT__ ? ' · ' + __APP_COMMIT__ : '') + '</footer>';
+  keepPickers(focused);
   void sha256(answers).then(print => { const slot = document.getElementById('answers-print'); if (slot) slot.textContent = print; });
 }
 
@@ -605,15 +624,19 @@ function openPad(id) {
 }
 
 app.addEventListener('change', event => {
-  const target = event.target;
-  if (target.id === 'form-file' && target.files[0]) void openForm(target.files[0]);
-  if (target.id === 'template-file' && target.files[0]) void openTemplateFile(target.files[0]);
-  if (target.id === 'answers-photo' && target.files[0]) void readPrinted(target.files[0]);
-  if (target.id === 'hand-photo' && target.files[0]) void readHandwriting(target.files[0]);
+  const target = event.target, file = target.type === 'file' ? target.files[0] : null;
+  if (target.type === 'file') target.value = '';        // a kept picker: the same file can be chosen again
+  // One job at a time, as for a dropped or pasted file: the job under way works on the same form (copies being made
+  // would take a new CSV's columns part-way through), so a file chosen meanwhile is not opened, and the page says so.
+  if (file && busy) { note = '“' + file.name + '” was not opened: the page is still busy (' + busy.charAt(0).toLowerCase() + busy.slice(1) + '). Choose it again when that is done.'; render(); return; }
+  if (target.id === 'form-file' && file) void openForm(file);
+  if (target.id === 'template-file' && file) void openTemplateFile(file);
+  if (target.id === 'answers-photo' && file) void readPrinted(file);
+  if (target.id === 'hand-photo' && file) void readHandwriting(file);
   if (target.id === 'hand-model') store.set('handModel', target.value);
   if (target.id === 'use-details') { useDetails = target.checked; store.set('useDetails', useDetails); render(); }
-  if (target.id === 'csv-file' && target.files[0]) void target.files[0].text().then(text => {
-    try { const rows = parseCsv(text); if (!rows.length) throw new Error('The CSV is empty.'); const headers = rows[0], matched = matchColumns(blanks, headers); merge = { name: target.files[0].name, headers, rows: rows.slice(1), ...matched, ids: columnIds(blanks, matched.columns) }; note = ''; }
+  if (target.id === 'csv-file' && file) void file.text().then(text => {
+    try { const rows = parseCsv(text); if (!rows.length) throw new Error('The CSV is empty.'); const headers = rows[0], matched = matchColumns(blanks, headers); merge = { name: file.name, headers, rows: rows.slice(1), ...matched, ids: columnIds(blanks, matched.columns) }; note = ''; }
     catch (error) { merge = null; note = error.message || String(error); }
     render();
   });
