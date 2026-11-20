@@ -18,3 +18,8 @@ Set by the repository's owner. They hold in every session, whatever else is aske
    started, or a result was not checked, say exactly that.
 8. **The build goes phase by phase** ([docs/BUILD_PLAN.md](docs/BUILD_PLAN.md)): finish the step, commit it on a branch,
    report, and wait for the owner's go before the next.
+9. **Merge only by fast-forwarding `main` from this clone**, after the branch's checks pass, and rebase the branch onto
+   `main` first if it is behind. Never use GitHub's merge button, `gh pr merge`, or any other merge GitHub makes: such a
+   commit carries the owner's name and personal e-mail address. Before every push to `main`, confirm with `git log`
+   that each new commit carries `Swixixle` and the noreply address, as author and as committer. Never rewrite `main`'s
+   existing history.
