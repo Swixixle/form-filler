@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Decrypter, Encrypter } from 'age-encryption';
-import { createVault, unlockVault, forgetVault, vaultInfo, checkPassphrase, cleanDetails, MIN_PASSPHRASE } from '../src/lib/vault.js';
+import { createVault, unlockVault, unlockKey, forgetVault, vaultInfo, checkPassphrase, cleanDetails, MIN_PASSPHRASE } from '../src/lib/vault.js';
 import { memoryStore } from '../src/lib/stores/memory.js';
 import { nodeStore } from '../src/lib/stores/node.js';
 import { MIN_PASSPHRASE as PAGE_MIN } from '../src/app/keep.js';
@@ -179,6 +179,40 @@ test('a planted file cannot keep unlock busy: a key file asking for a huge work 
   const twoStanzas = sealed.replace(/^(-> scrypt .*)$/m, '$1\n-> X25519 AAAA\nAAAA');
   await store.put('identity.age', bytes(twoStanzas), { prev: false });
   await assert.rejects(unlockVault(store, passphrase), { code: 'EFOREIGN' });
+});
+
+test('unlockKey: the vault key on its own, from a copy of identity.age and the passphrase, or from the recovery key typed any way', async () => {
+  const store = memoryStore();
+  const { recoveryKey } = await createVault(store, passphrase, FAST);
+  const info = await vaultInfo(store), sealed = await store.get('identity.age');
+  const message = bytes('an invented snapshot, sealed to the vault\'s public half');
+  const streamOf = data => new ReadableStream({ start(controller) { controller.enqueue(data); controller.close(); } });
+  const opened = async (key, data) => new Uint8Array(await new Response(await key.decrypt(streamOf(data))).arrayBuffer());
+  const snapshot = await sealTo(info.recipient, message);
+  const grouped = recoveryKey.slice(0, 16) + ' ' + recoveryKey.slice(16).match(/.{1,6}/g).join(' ');
+  for (const [secret, file, by] of [[passphrase, sealed, 'passphrase'], [recoveryKey, null, 'recovery key'], [grouped.toLowerCase(), sealed, 'recovery key']]) {
+    const key = await unlockKey(file, secret);
+    assert.equal(key.recipient, info.recipient);
+    assert.equal(key.by, by);
+    assert.deepEqual(await opened(key, snapshot), message, 'its decrypt opens a stream sealed to the vault\'s public half');
+    assert.deepEqual(Object.keys(key).sort(), ['by', 'decrypt', 'recipient'], 'the key itself is not handed out');
+  }
+  await assert.rejects(unlockKey(sealed, 'not the passphrase'), { code: 'EPASSPHRASE', message: 'That passphrase does not open this key file.' });
+  await assert.rejects(unlockKey(sealed, recoveryKey.slice(0, 40)), { code: 'EPASSPHRASE', message: 'That recovery key is not whole: check it letter by letter.' });
+  await assert.rejects(unlockKey(null, recoveryKey.slice(0, -1) + (recoveryKey.endsWith('Q') ? 'P' : 'Q')), { code: 'EPASSPHRASE', message: /not whole/ }, 'a mistyped letter is caught');
+  await assert.rejects(unlockKey(null, passphrase), { code: 'ENOKEY', message: 'There is no key file (identity.age) here; only the recovery key opens this.' });
+  // A well-formed key from another vault opens nothing sealed to this one.
+  const other = await unlockKey(null, (await createVault(memoryStore(), passphrase, FAST)).recoveryKey);
+  await assert.rejects(opened(other, snapshot), /no identity matched any of the file's recipients/);
+  // A key file sealed with the right passphrase but holding two keys, or none, is not one this vault wrote.
+  const two = new Encrypter(); two.setPassphrase(passphrase); two.setScryptWorkFactor(10);
+  await assert.rejects(unlockKey(await two.encrypt('# public key: ' + info.recipient + '\n' + recoveryKey + '\n' + recoveryKey + '\n'), passphrase), { code: 'EFOREIGN', message: /does not hold one key/ });
+  await assert.rejects(unlockKey(await two.encrypt('# no key in here\n'), passphrase), { code: 'EFOREIGN' });
+  // And a planted one asking for a huge work factor is refused before any scrypt runs.
+  const planted = text(sealed).replace(/^(-> scrypt \S+) 10$/m, '$1 30');
+  const started = Date.now();
+  await assert.rejects(unlockKey(bytes(planted), passphrase), { code: 'EFOREIGN', message: /not a file this vault wrote/ });
+  assert.ok(Date.now() - started < 1000, 'refused before any scrypt runs');
 });
 
 test('vault.json is read strictly: a "made" that is not a time is refused, and nothing but its four fields is kept', async () => {

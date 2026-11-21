@@ -1,5 +1,45 @@
 # Changes
 
+## 2.7.0 (2026-11-21)
+
+- **Backups, encrypted, and a restore tested by wiping and restoring** (phase 2, slice 4). A backup is one snapshot of
+  the archive and the vault, with the templates and settings beside it, written to a drive or folder you pick, in
+  `Form Filler Backups/2026-11-17 1530/`: `snapshot.tar.age`, a plain tar sealed with age to the vault's public key
+  (so a backup needs no passphrase and can be made while the vault is locked); `identity.age`, the vault's key, locked
+  with your passphrase; `snapshot.sha256`, both files' SHA-256, for `shasum -a 256 -c` or `sha256sum -c`; and
+  `README.txt`, how to restore with Form Filler and without it (the same text is [docs/RESTORE.md](docs/RESTORE.md)).
+  A backup is put together out of sight and read back from the drive before it is given its name, so it appears whole
+  or not at all. Form Filler never deletes one.
+- A restore writes nothing until the copy matches its fingerprints and your passphrase or recovery key opens it. Then
+  it unpacks out of sight, checks every file against the snapshot's manifest, and checks that the vault opens and its
+  details and locker documents read back; only then does it move each thing into place, with one rename. It never
+  overwrites: whatever is there stays (an empty folder too), and the restored copy goes beside it as
+  `… (restored 2026-11-17 1530)`, the date of the backup. A wrong passphrase, a damaged or cut-short copy, a snapshot
+  that does not match its manifest, and a vault that does not open are each refused, with nothing left behind. A
+  damaged `identity.age` stops only the passphrase: the recovery key restores without it.
+- What the checks prove is that a backup is undamaged and sealed to your vault's key, not that you made it: anyone
+  with the vault's public key could seal one, so keep backups on drives you control. A restore says what the vault
+  held, and it and `verify --fully` both say when a snapshot's vault holds no details and no locker documents.
+- On the command line: `form-filler backup make`, `list`, `verify` (with `--fully`, the snapshot opened and every file
+  checked against its manifest, writing nothing) and `restore`. A passphrase is never a flag: it is asked for without
+  showing what is typed, or read as one line from standard input. Ctrl-C while `make` or `restore` is under way
+  stops it as a failure would, with what was staged removed (exit 130).
+- In the library: `makeBackup`, `listBackups`, `verifyBackup`, `restoreBackup` and `README_TEXT` (`src/lib/backup.js`);
+  `unlockKey` (`src/lib/vault.js`), the vault key on its own, from a backup's copy of its key file or the recovery
+  key; and `readStream`, `createFileFrom` and `discardStaging` in the file interface (`form-filler/files/node`). The
+  snapshot's tar is written and read by `src/lib/tar.js`, a small writer and a strict reader written here: no tar
+  library.
+- Checked against the stock tools on this Mac: the system's tar (bsdtar 3.5.3) unpacks a snapshot's tar to every file
+  its manifest lists, byte for byte (it writes accented names in their other encoding, which the Mac takes for the
+  same names), and `shasum -a 256 -c` and `sha256sum -c` pass `snapshot.sha256` and fail a damaged copy. The checks
+  with the stock `age` tool are written (`tests/interop.test.js`: the snapshot opened by README.txt's own line with
+  the recovery key, then every vault file but the key file opened with it, and a document written out by README.txt's
+  line for that; and the snapshot opened by the same line with the passphrase, which opens the key file itself, on
+  Linux only, where the test can make a terminal), and CI now installs `age` to run them; they have not run yet.
+- `@noble/hashes` 2.4.0 is now a dependency, pinned. It was installed already, as age-encryption's own; backups use
+  its SHA-256 a piece at a time, so a large file is never held whole.
+- The page does not make backups yet; the Mac app will. The web page's own vault, in the browser, is not backed up.
+
 ## 2.6.0 (2026-11-20)
 
 - **Your details and saved signature are kept locked** (phase 2, slice 3; the privacy wall's part 6). The page used to

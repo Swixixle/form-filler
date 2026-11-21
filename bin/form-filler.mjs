@@ -33,9 +33,31 @@
 //       Reads every file again and says what is missing, changed or not recorded, and which items the index knew
 //       that have left the archive. Changes nothing. Exits 1 if anything is missing, changed, gone, unfinished or
 //       unreadable; with --strict, also if anything is not recorded.
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
-import { readFields, readTemplate, makeTemplate, placeAnswers, buildPdf, joinPdfs, autofill, parseCsv, matchColumns, rowValues, openArchive, checkItem, sha256 } from '../src/lib/index.js';
+//
+// Backups: one encrypted snapshot of the archive and the vault on a drive or folder you pick. Form Filler never
+// deletes one. DATA is the app's data folder, the one holding vault/ (and templates/ and settings.json when there are
+// any). A passphrase never goes on the command line: it is asked for and not shown, or read as one line from standard
+// input. The flags are read as strictly as the archive's.
+//   form-filler backup make DEST --data DATA --archive ARCHIVE
+//       A backup in DEST/Form Filler Backups/YYYY-MM-DD HHMM/: snapshot.tar.age (everything, locked to the vault's
+//       key, so no passphrase is needed), identity.age, snapshot.sha256 and README.txt. The copy is read back and
+//       checked. Prints the backup's folder.
+//   form-filler backup list DEST
+//       The backups in DEST/Form Filler Backups, with their dates and sizes, and any that stopped unfinished.
+//   form-filler backup verify BACKUP [--fully]
+//       Checks the backup's files against snapshot.sha256. With --fully, asks for the passphrase you had when the
+//       backup was made (or the recovery key), opens the snapshot and checks every file in it against its
+//       manifest. Writes nothing. Exits 1 if anything does not match.
+//   form-filler backup restore BACKUP --data DATA --archive ARCHIVE
+//       Asks for the passphrase or the recovery key, unpacks out of sight, checks every file against the manifest
+//       and that the vault opens, and only then puts the archive at ARCHIVE and the vault, templates and settings
+//       in DATA. Nothing is overwritten: what is there stays, and the restored copy goes beside it as
+//       "… (restored YYYY-MM-DD HHMM)", the backup's date. Prints where each went.
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { createInterface } from 'node:readline';
+import { readFields, readTemplate, makeTemplate, placeAnswers, buildPdf, joinPdfs, autofill, parseCsv, matchColumns, rowValues, openArchive, checkItem, sha256,
+  BACKUPS, makeBackup, listBackups, verifyBackup, restoreBackup } from '../src/lib/index.js';
 import { nodeFiles } from '../src/lib/files/node.js';
 import { PDFDocument } from 'pdf-lib';
 
@@ -121,25 +143,34 @@ function check() {
   template.blanks.forEach((blank, index) => process.stdout.write(String(index + 1).padStart(3) + '  ' + blank.kind.padEnd(6) + ' ' + (blank.label || (blank.unsure ? '(unclear: ' + blank.unsure.join(' or ') + ')' : '')) + (blank.field ? '  [' + blank.field + ']' : '') + (blank.options ? '  {' + blank.options.join(' | ') + '}' : '') + '\n'));
 }
 
-async function archive() {
-  // The archive's own flags, read strictly, so a file is never quietly taken for a flag's value and left out.
-  const OPTIONS = { add: ['direction', 'counterparty', 'title', 'matter', 'channel', 'sent', 'received', 'role'], file: ['role'], move: ['matter'], index: [], verify: ['strict'] };
-  const given = {}, plain = [];
+function strictFlags(group, OPTIONS, booleans, usage, twice = {}) {
+  // A group's own flags (the archive's, the backups'), read strictly, so a file is never quietly taken for a flag's
+  // value and left out: a flag the action does not take, one given twice and one with no value are refused, and a
+  // flag in `booleans` takes no value at all. "--x VALUE" and "--x=VALUE" are the same; after "--", nothing is a flag.
+  // Gives { given, action, folder, more }: the flags, then the plain words.
+  const given = Object.create(null), plain = [];
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index];
     if (arg === '--') { plain.push(...rest.slice(index + 1)); break; }
     if (!arg.startsWith('--')) { plain.push(arg); continue; }
     const equals = arg.indexOf('='), name = equals < 0 ? arg.slice(2) : arg.slice(2, equals);
-    if (name in given) fail('--' + name + ' is given twice.' + (name === 'role' ? ' One role per run: to give files different roles, run "archive file" once for each.' : ''));
-    if (name === 'strict') { if (equals >= 0) fail('--strict takes no value.'); given.strict = true; continue; }
+    if (name in given) fail('--' + name + ' is given twice.' + (twice[name] || ''));
+    if (booleans.includes(name)) { if (equals >= 0) fail('--' + name + ' takes no value.'); given[name] = true; continue; }
     const value = equals >= 0 ? arg.slice(equals + 1) : rest[++index];
     if (value === undefined || value === '' || (equals < 0 && value.startsWith('--'))) fail('--' + name + ' needs a value.');
     given[name] = value;
   }
   const [action, folder, ...more] = plain;
-  if (!OPTIONS[action] || !folder) fail('form-filler archive add|file|move|index|verify ARCHIVE ... ("form-filler help" says more)');
+  if (!Object.hasOwn(OPTIONS, action) || !folder) fail(usage);
   for (const name of Object.keys(given)) if (!OPTIONS[action].includes(name))
-    fail('--' + name + ' is not an option of "archive ' + action + '"' + (OPTIONS[action].length ? '; it takes ' + OPTIONS[action].map(option => '--' + option).join(', ') : '') + '.');
+    fail('--' + name + ' is not an option of "' + group + ' ' + action + '"' + (OPTIONS[action].length ? '; it takes ' + OPTIONS[action].map(option => '--' + option).join(', ') : '') + '.');
+  return { given, action, folder, more };
+}
+
+async function archive() {
+  const OPTIONS = { add: ['direction', 'counterparty', 'title', 'matter', 'channel', 'sent', 'received', 'role'], file: ['role'], move: ['matter'], index: [], verify: ['strict'] };
+  const { given, action, folder, more } = strictFlags('archive', OPTIONS, ['strict'], 'form-filler archive add|file|move|index|verify ARCHIVE ... ("form-filler help" says more)',
+    { role: ' One role per run: to give files different roles, run "archive file" once for each.' });
   if (existsSync(folder) && !statSync(folder).isDirectory()) fail(folder + ' is not a folder.');
   if (action !== 'add' && !existsSync(folder)) fail(folder + ' is not a folder.');
   const root = resolve(folder);
@@ -196,8 +227,137 @@ async function archive() {
   } catch (error) { fail(error.message); }
 }
 
+async function backup() {
+  // A passphrase is never one of the flags: it is asked for, or read from standard input, so it is in no command
+  // line, no shell history and no list of running programs.
+  const OPTIONS = { make: ['data', 'archive'], list: [], verify: ['fully'], restore: ['data', 'archive'] };
+  const usage = 'form-filler backup make|list|verify|restore ... ("form-filler help" says more)';
+  const { given, action, folder, more } = strictFlags('backup', OPTIONS, ['fully'], usage);
+  // A word left over is most often the rest of a folder's name that has a space in it, given without quotes.
+  if (more.length) fail('"' + more[0] + '" is one word too many: a folder whose name has a space in it must be in quotes.');
+  if (['make', 'restore'].includes(action) && (!given.data || !given.archive)) fail(usage);
+  const line = (word, text) => process.stdout.write(word.padEnd(14) + text + '\n');
+  const note = text => process.stderr.write(text + '\n');
+  const isFolder = path => { try { return statSync(path).isDirectory(); } catch { return false; } };
+  // Whether `path` is the folder `outer` or inside it, however either is spelled (through a link, in other capitals,
+  // an accent written another way): `outer` is looked for by the disk's own number for it, up the real path.
+  const within = (path, outer) => {
+    const target = statSync(outer, { bigint: true });
+    for (let at = realpathSync.native(path); ; at = dirname(at)) {
+      const info = statSync(at, { bigint: true });
+      if (info.dev === target.dev && info.ino === target.ino) return true;
+      if (dirname(at) === at) return false;
+    }
+  };
+  // Ctrl-C (or a stop asked for) while a backup or a restore is under way ends it as a failure would: what was staged
+  // is removed, and nothing is kept or put in place. A second Ctrl-C ends it at once.
+  const stopping = new AbortController();
+  const stop = signal => stopping.abort(Object.assign(new Error('Stopped (' + signal + ') before it was finished: ' + (action === 'make' ? 'no backup was kept.' : 'nothing was restored.')),
+    { code: 'ESTOPPED', status: signal === 'SIGINT' ? 130 : 143 }));
+  const watched = async work => {
+    process.once('SIGINT', stop).once('SIGTERM', stop);
+    try { return await work(stopping.signal); } finally { process.off('SIGINT', stop).off('SIGTERM', stop); }
+  };
+  // Sizes as the Finder shows them: 1000 to a kilobyte, with one decimal.
+  const size = bytes => {
+    let value = bytes, unit = 0;
+    while (unit < 4 && Number(value.toFixed(1)) >= 1000) { value /= 1000; unit++; }
+    return unit ? value.toFixed(1) + ' ' + ['KB', 'MB', 'GB', 'TB'][unit - 1] : bytes + ' bytes';
+  };
+  // The drive or folder the backups are on: one that is there, never made (a typo must not put a backup on the wrong
+  // disk); when it is the backups folder itself, the folder that holds it.
+  const driveOf = path => {
+    if (!isFolder(path)) fail(path + ' is not a folder: name a drive or folder that is there.');
+    const root = resolve(path);
+    return basename(root) === BACKUPS ? dirname(root) : root;
+  };
+  // The passphrase or the recovery key, read once and from standard input only: asked for at a terminal, with what is
+  // typed not shown, and otherwise the first line given.
+  let typed = '';
+  const askSecret = async () => {
+    if (process.stdin.isTTY) {
+      const question = 'Passphrase or recovery key: ', rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+      rl._writeToOutput = text => { if (text.includes(question)) process.stderr.write(question); };
+      // The answer is taken before the prompt closes; Ctrl-D or Ctrl-C closes it with none.
+      typed = await new Promise(done => { rl.question(question, answer => { done(answer); rl.close(); }); rl.once('close', () => done('')); });
+      process.stderr.write('\n');
+    } else {
+      const rl = createInterface({ input: process.stdin, terminal: false });
+      typed = await new Promise(done => { rl.once('line', done); rl.once('close', () => done('')); });
+      rl.close();
+    }
+    if (!typed) fail('no passphrase or recovery key was given');
+    return typed;
+  };
+  try {
+    if (action === 'make') {
+      const root = driveOf(folder), { data, archive } = given;
+      if (!isFolder(data) || !existsSync(join(data, 'vault', 'vault.json'))) fail('There is no vault in ' + data + ' (vault/vault.json): name the app\'s data folder, the one that holds vault/.');
+      if (!isFolder(archive)) fail(archive + ' is not a folder.');
+      // The backups folder (or the drive, while there is none yet) must be outside the archive and the data folder.
+      const backups = join(root, BACKUPS);
+      for (const [outer, what] of [[archive, 'the archive'], [data, 'the data folder']])
+        if (within(isFolder(backups) ? backups : root, outer)) fail('The backups would go inside ' + what + ' (' + backups + '): pick a drive or folder outside it.');
+      const made = await watched(signal => makeBackup({ data: nodeFiles(data), archive: nodeFiles(archive), destination: nodeFiles(root), signal })), where = join(root, made.path);
+      for (const { path, why } of made.skipped) note('note: skipped ' + path + ': ' + why);
+      process.stdout.write(where + '\n');
+      note(made.files + ' file(s) and ' + made.folders + ' folder(s), ' + size(made.sealed) + ', locked to the vault key ' + made.recipient.slice(0, 12) + '…' + made.recipient.slice(-6)
+        + '; the copy reads back as written. Made while the vault is locked: form-filler backup verify "' + where + '" --fully proves it opens with your passphrase.');
+    } else if (action === 'list') {
+      const root = driveOf(folder), found = await listBackups(nodeFiles(root));
+      for (const { name, bytes, missing } of found.backups) {
+        if (missing.length) line('incomplete', name + ': ' + size(bytes) + '; ' + missing.join(', ') + ' missing');
+        else line('backup', name + ': ' + size(bytes));
+      }
+      for (const path of found.unfinished) line('unfinished', join(root, path) + ': a backup that stopped before it was finished; delete it when you like');
+      process.stdout.write(found.backups.length + ' backup(s) in ' + join(root, BACKUPS) + '.\n');
+    } else if (action === 'verify') {
+      if (!isFolder(folder)) fail(folder + ' is not a folder.');
+      if (given.fully) await askSecret();
+      const report = await verifyBackup(nodeFiles(folder), given.fully ? { secret: typed } : {});
+      for (const name of report.matches) line('matches', name);
+      for (const { path, problem } of report.problems) line('problem', path + ': ' + problem);
+      for (const { path, note: said } of report.notes) line('note', path + ': ' + said);
+      if (report.made) line('checked', report.files + ' file(s) and ' + report.folders + ' folder(s) against the manifest');
+      process.stdout.write('The backup made ' + (report.made || basename(resolve(folder))) + ' is ' + (report.ok ? 'whole.' : 'not whole: do not rely on it.') + '\n');
+      // Set, not exit: an exit now would drop the end of the report on its way through a pipe.
+      if (!report.ok) process.exitCode = 1;
+    } else {
+      const data = resolve(given.data), archive = resolve(given.archive), parent = dirname(archive);
+      if (!isFolder(folder)) fail(folder + ' is not a folder.');
+      if (!basename(archive) || !isFolder(parent)) fail('The folder the archive goes in (' + parent + ') is not there.');
+      if (existsSync(data) && !isFolder(data)) fail(data + ' is not a folder.');
+      await askSecret();
+      // A data folder made here is removed again if the restore fails, with any folders made to hold it.
+      const made = isFolder(data) ? undefined : mkdirSync(data, { recursive: true });
+      let restored;
+      try { restored = await watched(signal => restoreBackup({ backup: nodeFiles(folder), secret: typed, data: nodeFiles(data), archive: { parent: nodeFiles(parent), name: basename(archive) }, signal })); }
+      catch (error) {
+        if (made) for (let at = data; ; at = dirname(at)) { try { rmdirSync(at); } catch { break; } if (at === made) break; }
+        throw error;
+      }
+      for (const { what, path, beside } of restored.placed) {
+        const base = what === 'archive' ? parent : data, wanted = what === 'archive' ? archive : join(data, what);
+        if (beside) line('beside', what + ': ' + wanted + ' was there already, so it went to ' + join(base, path));
+        else line('restored', what + ': ' + join(base, path));
+      }
+      for (const { path, why } of restored.skipped) note('note: skipped ' + path + ': ' + why);
+      for (const { folder: where, path } of restored.unfinished) note('note: ' + join(where === 'data' ? data : parent, path) + ' was left by a restore that stopped before it was finished; delete it when you like');
+      // What the vault read back. Anyone with its public key could seal a snapshot, but only its key makes its records.
+      const { details, documents } = restored.vault, empty = !details && !documents;
+      process.stdout.write('Restored the backup made ' + restored.made + ': ' + restored.files + ' file(s) and ' + restored.folders + ' folder(s), each as its manifest lists it; the vault opens and reads back ('
+        + (details ? 'your details' : 'no details') + ', ' + documents + ' locker document(s))' + (empty ? ': if yours held some, this is not a backup you made' : '')
+        + '. Check the archive with: form-filler archive verify "' + join(parent, restored.placed.at(-1).path) + '"\n');
+    }
+  } catch (error) {
+    const passphrase = error.code === 'EPASSPHRASE' && !/^AGE-SECRET-KEY-1/i.test(typed.replace(/\s+/g, ''));
+    fail(error.message + (passphrase ? ' If you changed your passphrase after this backup was made, use the one you had then, or your recovery key.' : ''), error.code === 'ESTOPPED' ? error.status : 1);
+  }
+}
+
 if (command === 'fields') await fields();
 else if (command === 'fill') await fill();
 else if (command === 'check') check();
 else if (command === 'archive') await archive();
+else if (command === 'backup') await backup();
 else { process.stdout.write(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1).filter(line => line.startsWith('//')).map(line => line.slice(3)).join('\n') + '\n'); if (command && command !== 'help' && command !== '--help') process.exit(1); }

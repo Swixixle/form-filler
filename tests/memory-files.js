@@ -1,11 +1,12 @@
 // The archive's file interface in memory, shaped like a Mac's disk: two names that differ only in case, or in how an
-// accent is encoded, are one name (a name keeps the form it was made with). The archive's tests try clashes here that
-// a Linux disk would never make. `dump()` is the tests' own view, not part of the interface: every file by path,
-// with its SHA-256.
+// accent is encoded, are one name (a name keeps the form it was made with). The archive's and the backups' tests try
+// clashes here that a Linux disk would never make. `dump()` is the tests' own view, not part of the interface: every
+// file by path, with its SHA-256.
 import { createHash } from 'node:crypto';
 
 const fault = (code, message) => Object.assign(new Error(message), { code });
 const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+const STAGING = /^\.ff-staging-[0-9a-f]{16}$/;
 
 export function memoryFiles({ foldCase = true, room } = {}) {
   let holder = null;
@@ -44,11 +45,43 @@ export function memoryFiles({ foldCase = true, room } = {}) {
     },
     async stat(path) { const node = find(path); return node ? { kind: node.kind, bytes: node.kind === 'file' ? node.bytes.length : 0 } : null; },
     async read(path) { const node = find(path); if (node?.kind !== 'file') throw fault('ENOENT', 'No file ' + path); return node.bytes.slice(); },
+    // The file's bytes as a stream of 64 KiB copies.
+    readStream(path) {
+      let bytes = null, at = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (!bytes) { const node = find(path); if (node?.kind !== 'file') throw fault('ENOENT', 'No file ' + path); bytes = node.bytes; }
+          if (at >= bytes.length) { controller.close(); return; }
+          controller.enqueue(bytes.slice(at, at += 64 * 1024));
+        },
+      }, { highWaterMark: 0 });
+    },
     async sha256(path) { return createHash('sha256').update(await files.read(path)).digest('hex'); },
     async createFile(path, bytes) {
       const { folder, name } = slot(path);
       if (folder.children.has(key(name))) throw fault('EEXIST', 'The name is taken: ' + path);
       folder.children.set(key(name), { kind: 'file', name, bytes: new Uint8Array(bytes) });
+    },
+    // The stream's pieces gathered, then made as createFile makes a file; a failing source makes nothing.
+    async createFileFrom(path, source) {
+      const pieces = [];
+      for await (const piece of source) {
+        if (!(piece instanceof Uint8Array)) throw new Error('A piece of ' + path + ' is not bytes (a Uint8Array).');
+        pieces.push(piece.slice());
+      }
+      const bytes = new Uint8Array(pieces.reduce((sum, piece) => sum + piece.length, 0));
+      pieces.reduce((at, piece) => { bytes.set(piece, at); return at + piece.length; }, 0);
+      await files.createFile(path, bytes);
+      return { bytes: bytes.length };
+    },
+    // A staging folder dropped whole, as on a disk; anything not named like one, or not a folder, is refused.
+    async discardStaging(path) {
+      const name = split(path).at(-1) ?? '';
+      if (!STAGING.test(name)) throw new Error('Not a staging folder Form Filler made: ' + path);
+      const { folder } = slot(path), node = folder.children.get(key(name));
+      if (!node) throw fault('ENOENT', 'Nothing at ' + path);
+      if (node.kind !== 'folder') throw new Error('Not a staging folder Form Filler made: ' + path);
+      folder.children.delete(key(name));
     },
     async createFolder(path) {
       const { folder, name } = slot(path);

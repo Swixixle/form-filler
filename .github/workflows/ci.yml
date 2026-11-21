@@ -1,5 +1,6 @@
-# Every push and pull request: the never-list gate, the unit and command-line tests, a build, and the whole page
-# walked at phone size, in Chromium here and in WebKit (the engine of Safari, an iPhone and the Mac app) on a Mac.
+# Every push and pull request: the never-list gate, the unit and command-line tests (with a backup opened by the stock
+# age tool), a build, and the whole page walked at phone size, in Chromium here and in WebKit (the engine of Safari,
+# an iPhone and the Mac app) on a Mac.
 # The handwriting step is left out (it downloads a 64 MB model); run it on a computer with
 #   node scripts/walk.cjs dist --handwriting
 name: Tests
@@ -20,10 +21,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # age is the stock tool a backup must open with (tests/interop.test.js).
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils age
+      - run: age --version
       # The never-list gate (never-list/README.md): no personal information in any file, commit or commit message.
       - run: node scripts/never-list.mjs --all --history
       - run: npm test
+        env:
+          FF_REQUIRE_AGE: '1'   # tests/interop.test.js must run the stock-age check here, not skip it
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: node scripts/walk.cjs dist

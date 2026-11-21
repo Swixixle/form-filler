@@ -8,7 +8,7 @@ visit.
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
 **Open it:** <https://formfiller-app.github.io/form-filler/>. The foot of the page names the version you have; this
-README describes 2.6.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md). Until 2026-11-21 the
+README describes 2.7.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md). Until 2026-11-21 the
 page was at `swixixle.github.io/form-filler/`. If you used it there, start again at the new address and add it to your
 home screen from there; [Privacy](#privacy) says how to remove what the old one kept.
 
@@ -157,9 +157,11 @@ of the "Q" in "Qty" for a checkbox, so every later answer landed one blank late:
 <img src="docs/images/webkit-qty.png" alt="The same table of an invented form in WebKit: before the fix, a blank numbered 4 on the Q of Qty and the cells numbered 5 to 10; now, the cells numbered 4 to 9">
 
 With `--handwriting` the walk also reads two synthetic handwritten pages (35 steps; it downloads the 64 MB model). The
-library and the command line have 201 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
+library and the command line have 326 unit tests (`npm test`). 33 of them are known limits, reported as "todo":
 30 of the checkbox labels (9 of those are layouts where a box still gets words that are not its caption), and 3 of
-the blank finder in tables.
+the blank finder in tables. Two open a backup with the stock `age` tool, and are skipped where it is not installed;
+one of those needs Linux. One types a passphrase at a terminal, which it makes with python3, and is skipped without
+it.
 
 Not tested: a real iPhone or a real Safari (Playwright's WebKit build stands in for them), real handwriting, and real
 forms.
@@ -167,7 +169,7 @@ forms.
 ## Plugging it into other programs
 
 **The library** (`src/lib/index.js`, ES module, Node 22 or a browser; its runtime dependencies are pdf-lib and, for
-the vault, age-encryption):
+the vault and backups, age-encryption and @noble/hashes):
 
 ```js
 import { readFields, placeAnswers, buildPdf } from 'form-filler';
@@ -254,11 +256,12 @@ with `--strict`, also if anything is not recorded. The archive's flags are read 
 refused instead of swallowing the file after it.
 
 **The vault** (`src/lib/vault.js` documents it): your details, saved signature and a locker of documents, encrypted
-with [age](https://age-encryption.org) so every file opens with the stock `age` tool too. A passphrase locks the vault
+with [age](https://age-encryption.org) so every file is meant to open with the stock `age` tool too (the check is
+written, in `tests/interop.test.js`, and has not run yet). A passphrase locks the vault
 key; the key locks everything else, so a new passphrase rewrites one small file, and the key itself is the recovery
 key, given once when the vault is made. It keeps its files in a store it is handed (in memory, in a folder, or in a
-browser's IndexedDB), each written whole with the copy before kept beside it, and each record checked when read back
-so a damaged or swapped file is refused.
+browser's IndexedDB), each written whole (only the locker's list keeps the copy before it, beside it), and each
+record checked when read back so a damaged or swapped file is refused.
 
 ```js
 import { createVault, unlockVault } from 'form-filler';
@@ -269,6 +272,53 @@ const { vault, recoveryKey } = await createVault(store, 'a few unrelated invente
 await vault.writeProfile({ details: { fullName: 'Jane Roe' }, signature: null });
 const again = await unlockVault(store, recoveryKey);   // or the passphrase
 ```
+
+**Backups** (`src/lib/backup.js` documents them; [docs/RESTORE.md](docs/RESTORE.md) is the README.txt each one
+carries): one encrypted snapshot of the archive and the vault, with the templates and settings beside it, on a drive
+or folder you pick, in `Form Filler Backups/2026-11-17 1530/`. The snapshot is a plain tar sealed with age to the
+vault's public key, so a backup needs no passphrase and can be made while the vault is locked. Beside it are a copy of
+the vault's key file, `snapshot.sha256` (`shasum -a 256 -c snapshot.sha256` checks the copy without Form Filler), and
+README.txt, which says how to restore with Form Filler and without it. Each backup is read back from the drive before
+it is kept, and Form Filler never deletes one. A restore unpacks out of sight, checks every file against the
+snapshot's manifest and that the vault opens and reads back, and only then moves each thing into place. It never
+overwrites: what is there stays, and the restored copy goes beside it as `… (restored 2026-11-17 1530)`, the
+backup's date. The page does not make backups yet; the Mac app will.
+
+What the checks prove is that a backup is undamaged and sealed to your vault's key, not that you made it: anyone who
+has the vault's public key could seal a snapshot, so keep backups on drives you control. The vault's own records carry
+tags only its key can make, so a restore refuses a forged one, and `verify --fully` and `restore` both say when a
+snapshot's vault holds no details and no locker documents; the archive's files carry no such tags.
+
+```js
+import { makeBackup, restoreBackup } from 'form-filler';
+import { nodeFiles } from 'form-filler/files/node';
+
+const { path } = await makeBackup({ data: nodeFiles('Test Data'), archive: nodeFiles('Test Archive'),
+  destination: nodeFiles('/Volumes/BACKUP') });   // path: 'Form Filler Backups/2026-11-17 1530'
+const { placed } = await restoreBackup({ backup: nodeFiles('/Volumes/BACKUP/' + path),
+  secret: 'a few unrelated invented words',      // the passphrase you had then, or the recovery key
+  data: nodeFiles('Test Data'), archive: { parent: nodeFiles('.'), name: 'Test Archive' } });
+```
+
+```sh
+# A backup on a drive, read back as it is written; prints its folder
+form-filler backup make /Volumes/BACKUP --data "Test Data" --archive "Test Archive"
+
+# Open it with the passphrase (asked for, not shown) and check every file against its manifest; writes nothing
+form-filler backup verify "/Volumes/BACKUP/Form Filler Backups/2026-11-17 1530" --fully
+
+# Restore it: whatever is there already stays, and the restored copy goes beside it
+form-filler backup restore "/Volumes/BACKUP/Form Filler Backups/2026-11-17 1530" \
+  --data "Test Data" --archive "Test Archive"
+```
+
+Also `backup list` (the backups on a drive, with their sizes, and any that stopped before they were finished). The
+flags are read as strictly as the archive's. A passphrase is never a flag: `verify --fully` and `restore` ask for it
+(or the recovery key) without showing what is typed, or read it as one line from standard input, so it is in no shell
+history. Every refusal or failure exits 1 with one line saying why, and so does a `verify` that finds anything not
+as it should be; a restore that put a copy beside what was there counts as done (exit 0). Ctrl-C while `make` or
+`restore` is under way stops it as a failure would, with what was staged removed, and exits 130. A folder whose name
+has a space in it goes in quotes.
 
 ## What it cannot do (yet)
 
@@ -320,7 +370,8 @@ const again = await unlockVault(store, recoveryKey);   // or the passphrase
 
 ## Run it
 
-Node 22 or later, and poppler (`pdftotext`, `pdftoppm`) for the tests.
+Node 22 or later, and poppler (`pdftotext`, `pdftoppm`) for the tests. The stock `age` tool is optional: where it is
+installed, `tests/interop.test.js` also opens a backup with it (CI installs it, and fails if it is missing there).
 
 ```sh
 npm ci
@@ -343,8 +394,10 @@ The test forms and pages in `tests/fixtures` are invented (`scripts/make-fixture
 
 ## Roadmap (planned, not built)
 
-None of this exists yet, except the archive's library and command line (2.5.0, above). The plan is in [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md); what the code was before it started is
-in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built is in
+None of this exists yet, except the archive (2.5.0) and backups (2.7.0), each as a library and a command, and the
+vault (2.6.0), which the page uses (all above); the app's screens for them are not built. The plan is in
+[docs/BUILD_PLAN.md](docs/BUILD_PLAN.md); what the code was before it started is in
+[docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built is in
 [docs/PHASE2_PROPOSAL.md](docs/PHASE2_PROPOSAL.md).
 
 - **A Mac app** (Tauri) around this page, with real file access.
@@ -352,7 +405,8 @@ in [docs/INVENTORY.md](docs/INVENTORY.md), and how the next phase would be built
   recovery key.
 - **An archive**: every document that comes in or goes out kept in a plain folder you own, filed by matter, with a
   record of how it moved and a fingerprint of each file; never deleted, never misfiled.
-- **Encrypted backups**, and a restore tested by wiping and restoring.
+- **Encrypted backups**, and a restore tested by wiping and restoring: built as a library and a command (2.7.0), with
+  no screen yet.
 - **Pre-flight checks** before anything is sent: empty blanks, missing signatures, dates, conflicts.
 - **The Crab**, a guide on the page that walks the blanks, explains each field from the form's own instructions, and
   says when it cannot check something.
@@ -365,7 +419,8 @@ Where it stands: phase 1 (the inventory) is done. Of phase 2, the never-list gat
 browsers and long PDFs are in 2.2.0, checkbox labels in 2.3.0, tables with tight rows in 2.3.1, and table cells named
 by their headers in 2.4.0. A throwaway spike of the
 Mac app has run ([docs/SHELL_SPIKE.md](docs/SHELL_SPIKE.md)), the archive is built as a library and a command
-(2.5.0), and the vault keeps your details locked (2.6.0); the app itself and backups are not started.
+(2.5.0), the vault keeps your details locked (2.6.0), and backups are built as a library and a command, with a
+restore tested by wiping and restoring (2.7.0); the app itself is still not started.
 
 ## Licence
 

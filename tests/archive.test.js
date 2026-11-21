@@ -212,7 +212,7 @@ for (const disk of Object.keys(DISKS)) {
   });
 
   test('the file interface can neither delete nor overwrite (' + disk + ')', async () => {
-    const { files, dump } = open(disk);
+    const { dir, files, dump } = open(disk);
     for (const name of ['delete', 'remove', 'rm', 'unlink', 'rmdir', 'writeFile', 'write', 'overwrite', 'truncate', 'copy'])
       assert.equal(files[name], undefined, 'no ' + name);
     await files.createFolder('a'); await files.createFolder('b'); await files.createFolder('a/inner');
@@ -232,6 +232,39 @@ for (const disk of Object.keys(DISKS)) {
     assert.deepEqual([...dump().keys()].sort(), ['a/x.txt', 'a/y.txt', 'a/z.txt'], 'and no hidden half-written file is left behind');
     await files.replaceIndex(bytes('one')); await files.replaceIndex(bytes('two'));
     assert.equal(new TextDecoder().decode(await files.read(INDEX)), 'two', 'the index cache is the one thing rewritten');
+    // A file made from a stream keeps the same rules, and a stream that fails leaves nothing behind.
+    const streamed = (...pieces) => new ReadableStream({ start(controller) { for (const piece of pieces) controller.enqueue(piece); controller.close(); } });
+    const readAll = async stream => new Uint8Array(await new Response(stream).arrayBuffer());
+    assert.deepEqual(await files.createFileFrom('a/streamed.txt', streamed(bytes('one '), bytes('two'))), { bytes: 7 });
+    assert.equal(new TextDecoder().decode(await files.read('a/streamed.txt')), 'one two');
+    assert.equal(new TextDecoder().decode(await readAll(files.readStream('a/streamed.txt'))), 'one two');
+    await assert.rejects(files.createFileFrom('a/x.txt', streamed(bytes('replaced?'))), { code: 'EEXIST' });
+    assert.equal(hashOf(await files.read('a/x.txt')), hashOf(bytes('first')), 'the file there is untouched');
+    let sent = false;
+    const failing = new ReadableStream({ pull(controller) { if (sent) controller.error(new Error('the drive went away')); else { sent = true; controller.enqueue(bytes('half of it')); } } }, { highWaterMark: 0 });
+    await assert.rejects(files.createFileFrom('a/half.txt', failing), /the drive went away/);
+    await assert.rejects(files.createFileFrom('a/odd.txt', streamed(bytes('fine'), 'not bytes')), /A piece of a\/odd.txt is not bytes/);
+    await assert.rejects(files.createFileFrom('nowhere/f.txt', streamed(bytes('x'))));
+    assert.deepEqual([...dump().keys()].sort(), [INDEX, 'a/streamed.txt', 'a/x.txt', 'a/y.txt', 'a/z.txt'], 'nothing half written is left, under any name');
+    // A staging folder is removed whole; nothing else is.
+    await files.createFolder('.ff-staging-0123456789abcdef');
+    await files.createFolder('.ff-staging-0123456789abcdef/inner');
+    await files.createFile('.ff-staging-0123456789abcdef/inner/f.txt', bytes('staged'));
+    await files.createFile('.ff-staging-0123456789abcdef/g.txt', bytes('staged'));
+    await files.createFile('.ff-staging-fedcba9876543210', bytes('a file named like a staging folder'));
+    await files.createFolder('a/.ff-staging-xyz');
+    if (dir) {
+      symlinkSync(join(dir, 'a'), join(dir, '.ff-staging-00000000000000aa'));
+      symlinkSync(join(dir, 'a'), join(dir, '.ff-staging-0123456789abcdef/a link out'));
+      symlinkSync(join(dir, 'a/x.txt'), join(dir, 'a/a link.txt'));
+      await assert.rejects(files.readStream('a/a link.txt').getReader().read(), { code: 'ELOOP' }, 'a link is not read through');
+    }
+    for (const path of ['a', 'a/.ff-staging-xyz', '.ff-staging-fedcba9876543210', ...(dir ? ['.ff-staging-00000000000000aa'] : [])])
+      await assert.rejects(files.discardStaging(path), /Not a staging folder Form Filler made/, path);
+    await files.discardStaging('.ff-staging-0123456789abcdef');
+    assert.equal(await files.stat('.ff-staging-0123456789abcdef'), null);
+    assert.equal((await files.stat('a/.ff-staging-xyz'))?.kind, 'folder');
+    assert.deepEqual([...dump().keys()].sort(), ['.ff-staging-fedcba9876543210', INDEX, 'a/streamed.txt', 'a/x.txt', 'a/y.txt', 'a/z.txt'], 'what a link in it led to is untouched');
   });
 
   test('a refused item writes nothing: no file and no folder (' + disk + ')', async () => {

@@ -2,14 +2,16 @@
 
 Written 2026-11-17, after the inventory ([INVENTORY.md](INVENTORY.md)), for the plan in [BUILD_PLAN.md](BUILD_PLAN.md).
 It was written as a proposal. **Status, evening of 2026-11-17:** approved, with the rulings recorded under
-[Decisions](#decisions-ruled-2026-11-17). On branch `phase-2` the never-list gate and slice 0 are built and tested.
-Slice 1, the throwaway shell spike, ran on 2026-11-20 ([SHELL_SPIKE.md](SHELL_SPIKE.md)); the Tauri shell itself,
-vault, archive and backup are not started.
+[Decisions](#decisions-ruled-2026-11-17). **Status, 2026-11-21:** the never-list gate and slice 0 are built and
+tested. Slice 1, the throwaway shell spike, ran on 2026-11-20 ([SHELL_SPIKE.md](SHELL_SPIKE.md)). Of slices 2 to 4,
+the archive (2.5.0) and backup and restore (2.7.0) are built as library modules with their commands, and the vault
+(2.6.0) as a library module the web page uses. The Tauri shell itself, slice 5, is not started.
 
 Marks: **[V]** verified: run here, read here in the code named, or read on the page linked. (The Tauri and age pages
 were read by a fetch helper whose report is relayed here. The shell spike of 2026-11-20 then ran Tauri, built with
-plain `cargo`, and `age-encryption` in its webview; Tauri's command-line tool and the stock `age` tool have not been
-run.) **[I]** inferred, to be confirmed before it is relied on.
+plain `cargo`, and `age-encryption` in its webview; Tauri's command-line tool has not been run. The stock `age` tool
+has not been run either: the check against it is written, in `tests/interop.test.js`, and CI installs the tool for
+it, but it has not run yet.) **[I]** inferred, to be confirmed before it is relied on.
 
 ## The proposal in one paragraph
 
@@ -244,7 +246,8 @@ Its author maintains a JavaScript implementation:
 
 The shell spike ran it in the webview on 2026-11-20 ([SHELL_SPIKE.md](SHELL_SPIKE.md)): 16 MB with a passphrase and
 with a key pair, a 64 MB stream, and 2 GB through the backup's loop, sealed and opened again **[V]**. It has not been
-checked against the stock `age` tool, which is on hold.
+checked against the stock `age` tool yet: the check is written (`tests/interop.test.js`, 2.7.0), and CI now installs
+the tool to run it, but it has not run.
 
 Why a standard format rather than encryption written here with the browser's built-in crypto:
 
@@ -444,8 +447,8 @@ index; verify (re-hash everything and report what is missing, changed or unrecor
 Inside `snapshot.tar.age`: the whole archive folder, the whole `vault/` folder (already encrypted, so it is wrapped
 twice), `templates/`, `settings.json`, and a `manifest.json` naming every file with its size and SHA-256.
 
-Restoring **without Form Filler**, on any computer with the `age` tool. This is the intended shape, **[I]** until
-the interop test runs it (not yet run):
+Restoring **without Form Filler**, on any computer with the `age` tool. This was the intended shape, **[I]**; as
+built, README.txt gives one line instead, for the reason under "As built (2.7.0)" below:
 
 ```sh
 age -d -o key.txt identity.age                          # asks for your passphrase
@@ -465,6 +468,45 @@ Design points:
 - **Restore never overwrites.** It unpacks to a staging folder, checks every file against the manifest, and only then
   moves things into place, and only into empty places. If the archive or vault already exists, the restored copy goes
   beside it as `… (restored 2026-11-17 1530)`.
+
+As built (2.7.0): as above, with these choices made on the way.
+- The tar holds two folders under fixed names, `data/` (the app's data folder: `vault/`, and `templates/` and
+  `settings.json` when there are any) and `archive/` (the whole archive, hidden files and empty folders included, but
+  never its lock), and last `manifest.json`: `{ formFiller: "backup-manifest", version: 1, made, recipient, entries:
+  [{ path, kind, bytes, sha256 }], skipped: [{ path, why }] }`, every member in tar order. A link is never followed;
+  it is named in `skipped`. A hand restore gives `restored/data` and `restored/archive`, whatever the folders were
+  called. The tar is plain pax, written and read by `src/lib/tar.js` with no tar library, and its reader refuses
+  anything the writer never writes: links, absolute paths, "..", a name twice, a member before its folder, bytes
+  after the end.
+- `snapshot.sha256` covers `identity.age` too, so a swapped key file is found before any passphrase is tried. Its two
+  lines are as `shasum -a 256 -c` and `sha256sum -c` read them.
+- A backup is put together in a staging folder, `.ff-staging-<16 hex digits>` in `Form Filler Backups/`, read back
+  from the drive, and then renamed to its name in one step; a restore stages beside the archive and inside the data
+  folder. A staging folder that is given up, or emptied, is removed whole: with the index cache and the lock, the only
+  thing the file interface removes. Ctrl-C while either runs removes its staging, as a failure does. One left by a
+  backup that was killed is listed as unfinished, and one left by a restore is named by the next restore.
+- A copy that goes beside is named for the backup's own date, so it says which backup it holds. Anything at a place
+  counts as taken, an empty folder too: a create-only rename is the only move the file interface has, and it never
+  replaces anything.
+- README.txt's restore without Form Filler is one line, not the piped shape above:
+  `age -d -i identity.age -o snapshot.tar snapshot.tar.age && mkdir restored && tar -x -f snapshot.tar -C restored`.
+  age gives out the pieces it has checked before it finds a bad one **[V, the library; I for the stock age]**, and
+  tar exits 0 on input with no end blocks **[V, bsdtar]**, so with a pipe a damaged backup could unpack in part while
+  tar, and so the whole line, reports success; only age's own error message would say otherwise **[I, from age
+  1.1.1's source]**. With `&&`, tar runs only on what age finished checking, and no key file is left on disk. It
+  needs room for one more copy of the snapshot. With only the recovery key, the same line takes `-i key.txt`. If age
+  stops with an error, it may already have written part of the snapshot to `snapshot.tar`, unencrypted **[I, from
+  age 1.1.1's source]**, so README.txt says to delete it then too.
+- A backup made while the vault is locked trusts the public key vault.json names, since nothing else can be checked
+  without the passphrase; `form-filler backup verify --fully` proves it opens with your passphrase, and
+  `backup make` says so every time.
+- The checks prove that a backup is undamaged and sealed to the vault's key, not who made it: anyone with the public
+  key could seal a snapshot. The vault's records carry tags only its key can make, so a restore refuses a forged one;
+  a snapshot whose vault holds no records at all (no details and no locker list) is restored, and both a restore and
+  `verify --fully` say so. README.txt says to keep backups on drives you control.
+- A name in the archive may be as long as a Mac's disk holds, 255 UTF-16 units (up to 765 bytes), so a name another
+  program wrote is backed up too; the archive's own names stay within 240 bytes. The archive's folder name on a
+  restore must leave room for " (restored YYYY-MM-DD HHMM) (999)" within 255 bytes.
 
 ### The open engineering question
 
@@ -577,10 +619,10 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | --- | --- | --- | --- |
 | – | **Never-list gate** (privacy wall, part 2) | Small | **Done.** A commit carrying a never-list value is refused, on the Mac and on GitHub |
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
-| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
+| 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold then; written in slice 4, and not run yet), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
 | 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand. **Built** (2026-11-20, 2.5.0): `src/lib/archive.js`, the file interface over Node, and `form-filler archive add`, `file`, `move`, `index`, `verify`; the hand check is yours |
-| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text. **Built** (2026-11-20, 2.6.0): `src/lib/vault.js` with stores in memory, in a folder and in IndexedDB; the page keeps your details and signature in it, and the walk checks in both engines that nothing of them is in plain text. Pages at the same address can still script the page while it is open (see "The privacy wall in phase 2"); on 2026-11-21, before 2.6.0 was published, the page moved to an address of its own. The locker has no screen yet (slice 5), and the stock-`age` check waits with slice 4 |
-| 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |
+| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text. **Built** (2026-11-20, 2.6.0): `src/lib/vault.js` with stores in memory, in a folder and in IndexedDB; the page keeps your details and signature in it, and the walk checks in both engines that nothing of them is in plain text. Pages at the same address can still script the page while it is open (see "The privacy wall in phase 2"); on 2026-11-21, before 2.6.0 was published, the page moved to an address of its own. The locker has no screen yet (slice 5), and the stock-`age` check is written with slice 4 and has not run yet |
+| 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check. **Built** (2026-11-21, 2.7.0): `src/lib/backup.js` and `src/lib/tar.js`, `unlockKey` in the vault, `form-filler backup make`, `list`, `verify` and `restore`, and the wipe-and-restore test with each way it must fail safely. The system's tar and the stock checksum tools are checked on the Mac; the stock-`age` check is written and CI installs `age` for it, but it has not run yet. The hand check is yours |
 | 5 | The shell: setup, unlock, locker, archive list, export into the archive, backup and restore screens, with never-list fields masked (privacy wall, part 5) | Large | You can do all of it by clicking |
 | 6 | Your drill on a real document | Yours | Wipe, restore, everything comes back |
 

@@ -1,6 +1,8 @@
 // The vault: what is yours and secret (your details, your saved signature, the documents in your locker), encrypted
 // with age (age-encryption.org), a published format with a stock command-line tool, so every vault file is meant to
-// open with `age -d` even if Form Filler is gone (checked against the stock tool in slice 4).
+// open with `age -d` even if Form Filler is gone. tests/interop.test.js opens them with the stock tool where it is
+// installed: identity.age with the passphrase, typed at a terminal, which the test can give the tool on Linux only;
+// every other one with the recovery key.
 //
 //   vault.json          not secret: the format, when the vault was made, and the vault key's public half
 //   identity.age        the vault key itself, locked with your passphrase (the only file the passphrase touches)
@@ -68,6 +70,19 @@ const keyFile = (identity, recipient, made) => {
   return encoder.encode('# Form Filler vault key, made ' + made + '\n# public key: ' + recipient + '\n' + identity + '\n');
 };
 const keyIn = text => { const keys = String(text).match(/^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/gm) || []; return keys.length === 1 ? keys[0] : null; };
+// A secret as it was typed: the recovery key (spaces and line breaks taken out, in capitals) when it is one, and
+// otherwise the passphrase, exactly as typed.
+const secretOf = secret => { const typed = String(secret ?? ''), key = typed.replace(/\s+/g, '').toUpperCase(); return key.startsWith('AGE-SECRET-KEY-1') ? { key } : { passphrase: typed }; };
+// The key in a key file (identity.age), opened with the passphrase: checked first to be a file this vault writes, so a
+// planted one is refused before scrypt runs. `wrong` is what to say when the passphrase does not open it. Gives the
+// one key the file holds, or null.
+async function openKeyFile(sealed, passphrase, what, wrong) {
+  checkHeader(sealed, 'key', what);
+  let text;
+  try { const decrypter = new Decrypter(); decrypter.addPassphrase(passphrase); text = await decrypter.decrypt(sealed, 'text'); }
+  catch { throw fault('EPASSPHRASE', wrong); }
+  return keyIn(text);
+}
 
 // An age file's header, read before anything in it is decrypted, must be what this vault writes: one stanza, X25519 for
 // a record or a document, scrypt at a work factor this vault would use for the key file.
@@ -120,9 +135,9 @@ export async function createVault(store, passphrase, { now = () => new Date(), w
 export async function unlockVault(store, secret, { now = () => new Date() } = {}) {
   const info = await vaultInfo(store);
   if (!info) throw new Error('There is no vault here.');
-  const typed = String(secret ?? ''), key = typed.replace(/\s+/g, '').toUpperCase();
+  const { key, passphrase } = secretOf(secret);
   let identity;
-  if (key.startsWith('AGE-SECRET-KEY-1')) {
+  if (key) {
     if (!SECRET.test(key)) throw fault('EPASSPHRASE', 'That recovery key is not whole: check it letter by letter.');
     let recipient = null;
     try { recipient = await identityToRecipient(key); } catch { /* a typing mistake the key's own check caught */ }
@@ -131,14 +146,34 @@ export async function unlockVault(store, secret, { now = () => new Date() } = {}
   } else {
     const sealed = await store.get(KEY);
     if (!sealed) throw new Error('This vault\'s key (identity.age) is missing; only the recovery key can open it now.');
-    checkHeader(sealed, 'key', 'The vault\'s key file (identity.age)');
-    let text;
-    try { const decrypter = new Decrypter(); decrypter.addPassphrase(typed); text = await decrypter.decrypt(sealed, 'text'); }
-    catch { throw fault('EPASSPHRASE', 'That passphrase does not open this vault.'); }
-    identity = keyIn(text);
+    identity = await openKeyFile(sealed, passphrase, 'The vault\'s key file (identity.age)', 'That passphrase does not open this vault.');
     if (!identity || await identityToRecipient(identity) !== info.recipient) throw new Error('This vault\'s key file is not its own (identity.age does not match vault.json).');
   }
   return unlocked(store, info, identity, now);
+}
+
+// A vault key on its own, with no vault beside it: a backup's copy of identity.age (`sealed`, its bytes, or null when
+// there is none), opened with the passphrase, or the recovery key itself, typed any way. Gives { recipient, by,
+// decrypt(stream) }: the key's public half, "passphrase" or "recovery key" for which one opened it, and a way to open
+// an age stream sealed to the key. The key itself stays in here, as an unlocked vault's does. A passphrase with no key
+// file is refused with ENOKEY.
+export async function unlockKey(sealed, secret) {
+  const { key, passphrase } = secretOf(secret);
+  let identity, recipient = null;
+  if (key) {
+    if (SECRET.test(key)) { try { recipient = await identityToRecipient(key); } catch { /* a typing mistake the key's own check caught */ } }
+    if (!recipient) throw fault('EPASSPHRASE', 'That recovery key is not whole: check it letter by letter.');
+    identity = key;
+  } else {
+    if (!sealed) throw fault('ENOKEY', 'There is no key file (identity.age) here; only the recovery key opens this.');
+    identity = await openKeyFile(sealed, passphrase, 'This key file (identity.age)', 'That passphrase does not open this key file.');
+    try { recipient = identity && await identityToRecipient(identity); } catch { recipient = null; }
+    if (!recipient) throw fault('EFOREIGN', 'This key file (identity.age) is not a file this vault wrote: it does not hold one key.');
+  }
+  return {
+    recipient, by: key ? 'recovery key' : 'passphrase',
+    decrypt(stream) { const decrypter = new Decrypter(); decrypter.addIdentity(identity); return decrypter.decrypt(stream); },
+  };
 }
 
 // The whole vault forgotten: every file in its store, and every earlier copy. It cannot be brought back.
