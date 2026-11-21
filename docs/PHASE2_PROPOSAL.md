@@ -69,6 +69,9 @@ keeps (they share its cache). The page now refuses to run in a frame or a window
 service worker serves a kept file only while it matches its build's fingerprint; that leaves a page there able to
 delete or replace the vault's files, and to guess at the passphrase against a copy of the key file. Only an address of
 its own closes this off: a custom domain for this site, or a GitHub Pages site of its own. That is the owner's choice.
+**Done** (2026-11-21): the repository moved to its own GitHub organization, `formfiller-app`, and the page is now
+served from `formfiller-app.github.io/form-filler/`, where nothing else is published. 2.6.0, the first version with
+the vault, was never served at the old address.
 
 ## Slice 0: fix the ground first
 
@@ -576,7 +579,7 @@ Each slice ends in something you can check. Sizes are relative, not dates.
 | 0 | Ground: WebKit in the tests, defects 1 to 3 | Medium | **Done.** The walk passes in both engines |
 | 1 | **Spike, thrown away afterwards**: Rust installed; the page in a Tauri window; a PDF opened in the real webview; a folder picked, written to, and still allowed after restart; age round-trip in the webview and against the `age` tool; a 2 GB stream timed | Small | A one-page note of what was found; the **[I]** marks above become **[V]** or get replaced. **Run 2026-11-20** ([SHELL_SPIKE.md](SHELL_SPIKE.md)): all but the stock-`age` check (on hold), a real click in the folder dialog, a bundled `.app` opened from the Finder, whether pdf.js runs its own worker, and the handwriting reader |
 | 2 | Archive module and its tests | Medium | `npm test`; `form-filler archive verify` on a folder you made by hand. **Built** (2026-11-20, 2.5.0): `src/lib/archive.js`, the file interface over Node, and `form-filler archive add`, `file`, `move`, `index`, `verify`; the hand check is yours |
-| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text. **Built** (2026-11-20, 2.6.0): `src/lib/vault.js` with stores in memory, in a folder and in IndexedDB; the page keeps your details and signature in it, and the walk checks in both engines that nothing of them is in plain text. Pages at the same address can still script the page while it is open (see "The privacy wall in phase 2"): an address of its own is the owner's choice. The locker has no screen yet (slice 5), and the stock-`age` check waits with slice 4 |
+| 3 | Vault module and its tests, with its browser adapter (privacy wall, part 6) | Medium | `npm test`; the web page keeps no detail or signature in plain text. **Built** (2026-11-20, 2.6.0): `src/lib/vault.js` with stores in memory, in a folder and in IndexedDB; the page keeps your details and signature in it, and the walk checks in both engines that nothing of them is in plain text. Pages at the same address can still script the page while it is open (see "The privacy wall in phase 2"); on 2026-11-21, before 2.6.0 was published, the page moved to an address of its own. The locker has no screen yet (slice 5), and the stock-`age` check waits with slice 4 |
 | 4 | Backup and restore, with the wipe-and-restore test | Medium | `npm test`, including the stock-`age` check |
 | 5 | The shell: setup, unlock, locker, archive list, export into the archive, backup and restore screens, with never-list fields masked (privacy wall, part 5) | Large | You can do all of it by clicking |
 | 6 | Your drill on a real document | Yours | Wipe, restore, everything comes back |

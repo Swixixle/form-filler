@@ -15,6 +15,13 @@
 - What the vault cannot stop is said plainly (README, Privacy): another page at the same web address can still script
   this one while it is open. Against that, the page now refuses to run inside another page or in a window another
   page opened, and its service worker serves a kept file only while it matches the fingerprint its build wrote.
+- **A web address of its own** (2026-11-21): the page moved from `swixixle.github.io/form-filler/` to
+  <https://formfiller-app.github.io/form-filler/>, the address of the project's own GitHub organization, where nothing
+  else is published, so no other page shares its storage. This version, the first with the vault, was never served at
+  the old address. At the new address you start again. What earlier versions kept at the old one is in plain text and
+  may still be there, and a browser that opened the page there may go on opening its old copy, which does not hear of
+  the move; README, Privacy, says how to remove both. The repository moved with it, to `formfiller-app/form-filler`;
+  GitHub sends links to the old one on.
 - Two tabs keep to one vault: each hears when another makes, changes, locks or forgets it, and a tab whose vault was
   forgotten under it is refused when it writes. The idle lock counts the clock, so a computer that slept comes back
   locked. *Forget it* forgets a saved signature everywhere it was kept. Remembered forms no longer keep the file's name.

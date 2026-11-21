@@ -7,8 +7,10 @@ visit.
 
 It is also a library and a command-line tool, so other programs can fill forms with it.
 
-**Open it:** <https://swixixle.github.io/form-filler/>. The foot of the page names the version you have; this README
-describes 2.4.1, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+**Open it:** <https://formfiller-app.github.io/form-filler/>. The foot of the page names the version you have; this
+README describes 2.6.0, and what changed in each version is in [CHANGELOG.md](CHANGELOG.md). Until 2026-11-21 the
+page was at `swixixle.github.io/form-filler/`. If you used it there, start again at the new address and add it to your
+home screen from there; [Privacy](#privacy) says how to remove what the old one kept.
 
 Everything below describes what works today, except the section headed [Roadmap](#roadmap-planned-not-built), which
 is planned and not built.
@@ -95,20 +97,30 @@ fingerprints.
   the first time, at a fixed version: Quick, about 64 MB, or Larger, about 338 MB. Your photo stays on the device, but
   the download tells Hugging Face your IP address, as any download does.
 - **What it keeps, and where.** Your details and a signature (if you choose to keep it) are kept in this browser on
-  this device in an encrypted vault, locked with a passphrase you choose, never in plain text: the browser's storage
-  belongs to the whole web address the page is served from (`swixixle.github.io`), which other pages published there
-  share. The vault is in the [age](https://age-encryption.org) format, the passphrase is never kept, and while it is
-  unlocked your details are in the page's memory only; it locks again when you close the page or leave it alone for
+  this device in an encrypted vault, locked with a passphrase you choose, never in plain text. The browser's storage
+  belongs to the whole web address the page is served from, `formfiller-app.github.io`, and nothing else is published
+  there: it is the address of this project's own GitHub organization, which holds this repository only. The vault is
+  in the [age](https://age-encryption.org) format, the passphrase is never kept, and while it is unlocked your details
+  are in the page's memory only; it locks again when you close the page or leave it alone for
   15 minutes. When the vault is made you are shown a recovery key, once: the only way back in if the passphrase is
   forgotten. Each form's blank positions are kept in plain storage, without the file's name, since they hold nothing
   of you. *Forget my details* removes the vault; details an earlier version kept in plain text are shown, and gone as
   soon as you lock them away or forget them. What is read back from storage is checked before it is used.
-- **What the vault does not stop.** It keeps other pages at this address from reading your details out of the
-  browser's storage. It cannot stop such a page from scripting this one while it is open: the page refuses to run
-  inside another page or in a window another page opened, and its offline copy is checked against the fingerprints
-  its build wrote, but only a web address of its own would close this off. Changing your passphrase locks the same key
-  again, so an earlier copy of the key file still opens with the old one; if your passphrase may have been seen,
-  forget your details and save them again, which makes a new key.
+- **What the vault does not stop.** It keeps other pages at the same web address from reading your details out of the
+  browser's storage, but not from scripting this page while it is open. Only an address of its own closes that off,
+  and the page has one, as long as nothing else is published at `formfiller-app.github.io`. The page also refuses to
+  run inside another page or in a window another page opened, and its offline copy is checked against the fingerprints
+  its build wrote. Changing your passphrase locks the same key again, so an earlier copy of the key file still opens
+  with the old one; if your passphrase may have been seen, forget your details and save them again, which makes a new
+  key.
+- **What the old address kept.** Until 2026-11-21 the page was served from `swixixle.github.io`, an address other
+  pages published by the same GitHub account could share. The versions served there, up to 2.5.0, had no vault: what
+  they kept (your details, a saved signature, and the forms they remembered, with their file names) is in plain text,
+  and may still be in your browser at that address. A browser that opened the page there may also go on opening its
+  old copy there, from its offline store; that copy stays at the version it had and does not hear of the move. To
+  remove both, clear your browser's stored data for `swixixle.github.io`. A copy on an iPhone or iPad home screen
+  keeps storage of its own, apart from Safari's: open it once more, use *Forget my details* and *Forget it*, then
+  delete it.
 - **The repository holds nothing personal.** Tests, fixtures and pictures use invented people and invented forms only.
   A gate checks every commit before it is made, and again on GitHub, for the shapes of Social Security, routing and
   account numbers, dates of birth, real e-mail addresses, and any picture or PDF not listed as invented. On the
@@ -178,7 +190,7 @@ A source PDF comes through whole: its pages that `pages` does not list are kept,
 leaves them out). Also: `readTemplate`, `makeTemplate`, `findBlanks` (from a page's grayscale pixels), `numberedLines`
 (answers written after their blank's number), `autofill`, `parseCsv`/`matchColumns`/`rowValues`, `joinPdfs`,
 `segmentLines`, and `findOptions`/`nameOptions`, which find round option buttons drawn on a page, each set as one
-choice (not yet used by the page). Install it from GitHub: `npm install github:Swixixle/form-filler`.
+choice (not yet used by the page). Install it from GitHub: `npm install github:formfiller-app/form-filler`.
 
 **The command line** (`bin/form-filler.mjs`, no browser, no network):
 

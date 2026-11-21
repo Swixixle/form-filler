@@ -55,7 +55,10 @@ locally, and nothing you type is sent back. The wall below makes sure it stays t
 Status: item 2 is built (the first commit of phase 2; see [never-list/README.md](../never-list/README.md)), and goes
 one step further than the wording above: the local file holds no real value, only a keyed fingerprint of each. Items 1, 5
 and 6 are part of phase 2 ([PHASE2_PROPOSAL.md](PHASE2_PROPOSAL.md)); item 4 binds phase 4; item 3 is already how the
-repository works, and the gate now enforces it for pictures and PDFs.
+repository works, and the gate now enforces it for pictures and PDFs. Item 6's web half is built: since 2.6.0 the web
+version encrypts what it stores, and since 2026-11-21 the live page has a web address of its own,
+`formfiller-app.github.io`, so it no longer shares storage with your other github.io pages. The Mac app is still to
+come.
 
 ## Architecture
 

@@ -4,10 +4,11 @@
 // or leave it alone for 15 minutes (counted on the clock, so a computer that slept comes back locked).
 //
 // What this does and does not stop. The browser's storage belongs to the whole web address the page is served from,
-// shared with every other page published there. The vault keeps those pages from reading your details out of that
-// storage. It cannot keep them from scripting this page while it is open: the page refuses to run inside another page
-// or in a window another page there opened and still holds (main.js), and its offline copy is checked against the
-// fingerprints its build wrote (sw.js), but only an address of its own closes this off.
+// shared with every other page published there. The vault keeps such pages from reading your details out of that
+// storage, but not from scripting this page while it is open. Only an address of its own closes that off, and since
+// 2026-11-21 the page has one: formfiller-app.github.io, where nothing else is published (it was swixixle.github.io,
+// which other pages could share). The page also refuses to run inside another page or in a window another page there
+// opened and still holds (main.js), and its offline copy is checked against the fingerprints its build wrote (sw.js).
 //
 // The keeper's state is one of:
 //   'checking'     at the start, until the browser's storage has answered
