@@ -116,11 +116,12 @@ fingerprints.
 - **What the old address kept.** Until 2026-11-21 the page was served from `swixixle.github.io`, an address other
   pages published by the same GitHub account could share. The versions served there, up to 2.5.0, had no vault: what
   they kept (your details, a saved signature, and the forms they remembered, with their file names) is in plain text,
-  and may still be in your browser at that address. A browser that opened the page there may also go on opening its
-  old copy there, from its offline store; that copy stays at the version it had and does not hear of the move. To
-  remove both, clear your browser's stored data for `swixixle.github.io`. A copy on an iPhone or iPad home screen
-  keeps storage of its own, apart from Safari's: open it once more, use *Forget my details* and *Forget it*, then
-  delete it.
+  and may still be in your browser at that address. The old address now shows a page that says where Form Filler
+  went, lists what the old version left in that browser, shows your details if you ask (to type them in again here),
+  and removes all of it when you press *Remove it all*. A copy kept there for offline use, or put on a home screen,
+  should turn into that page the next time it is opened with a connection. A copy on an iPhone or iPad home screen
+  keeps storage of its own, apart from Safari's: open it once more, press *Remove it all* there too, then delete it.
+  Clearing your browser's stored data for `swixixle.github.io` removes it all as well.
 - **The repository holds nothing personal.** Tests, fixtures and pictures use invented people and invented forms only.
   A gate checks every commit before it is made, and again on GitHub, for the shapes of Social Security, routing and
   account numbers, dates of birth, real e-mail addresses, and any picture or PDF not listed as invented. On the
