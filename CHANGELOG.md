@@ -29,13 +29,14 @@
   key; and `readStream`, `createFileFrom` and `discardStaging` in the file interface (`form-filler/files/node`). The
   snapshot's tar is written and read by `src/lib/tar.js`, a small writer and a strict reader written here: no tar
   library.
-- Checked against the stock tools on this Mac: the system's tar (bsdtar 3.5.3) unpacks a snapshot's tar to every file
-  its manifest lists, byte for byte (it writes accented names in their other encoding, which the Mac takes for the
-  same names), and `shasum -a 256 -c` and `sha256sum -c` pass `snapshot.sha256` and fail a damaged copy. The checks
-  with the stock `age` tool are written (`tests/interop.test.js`: the snapshot opened by README.txt's own line with
-  the recovery key, then every vault file but the key file opened with it, and a document written out by README.txt's
-  line for that; and the snapshot opened by the same line with the passphrase, which opens the key file itself, on
-  Linux only, where the test can make a terminal), and CI now installs `age` to run them; they have not run yet.
+- Checked against the stock tools (`tests/interop.test.js`). On this Mac: the system's tar (bsdtar 3.5.3) unpacks a
+  snapshot's tar to every file its manifest lists, byte for byte (it writes accented names in their other encoding,
+  which the Mac takes for the same names), and `shasum -a 256 -c` and `sha256sum -c` pass `snapshot.sha256` and fail
+  a damaged copy. In CI, on GitHub's Linux runner, which installs `age` and fails without it: GNU tar 1.35 unpacks
+  the tar with every name exactly as written; the stock `age` 1.1.1 opens the snapshot by README.txt's own line with
+  the recovery key, then every vault file but the key file, and writes a document out by README.txt's line for that;
+  and it opens the snapshot by the same line with the passphrase, typed at a terminal, which opens the key file
+  itself. The stock `age` has not been run on a Mac: it is not installed on the one this was built on.
 - `@noble/hashes` 2.4.0 is now a dependency, pinned. It was installed already, as age-encryption's own; backups use
   its SHA-256 a piece at a time, so a large file is never held whole.
 - The page does not make backups yet; the Mac app will. The web page's own vault, in the browser, is not backed up.

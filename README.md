@@ -256,8 +256,8 @@ with `--strict`, also if anything is not recorded. The archive's flags are read 
 refused instead of swallowing the file after it.
 
 **The vault** (`src/lib/vault.js` documents it): your details, saved signature and a locker of documents, encrypted
-with [age](https://age-encryption.org) so every file is meant to open with the stock `age` tool too (the check is
-written, in `tests/interop.test.js`, and has not run yet). A passphrase locks the vault
+with [age](https://age-encryption.org) so every file opens with the stock `age` tool too (`tests/interop.test.js`
+checks that in CI, with age 1.1.1 on Linux). A passphrase locks the vault
 key; the key locks everything else, so a new passphrase rewrites one small file, and the key itself is the recovery
 key, given once when the vault is made. It keeps its files in a store it is handed (in memory, in a folder, or in a
 browser's IndexedDB), each written whole (only the locker's list keeps the copy before it, beside it), and each
